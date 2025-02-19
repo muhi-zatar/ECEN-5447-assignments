@@ -9,7 +9,7 @@ using DifferentialEquations
 using LinearAlgebra
 using Plots
 using PowerSystems
-using PowerFlows 
+using PowerFlows
 const PSY = PowerSystems
 const PF = PowerFlows
 
@@ -18,7 +18,7 @@ const PF = PowerFlows
 # -----------------------------------------------------------------------------------------
 
 # Load raw file into Sienna
-dir_raw = "./ThreeBusMultiLoad.raw"
+dir_raw = "data/ThreeBusMultiLoad.raw"
 sys = PSY.System(dir_raw)
 
 # Run power flow
@@ -43,7 +43,38 @@ Q = pf_result["bus_results"].Q_net / PSY.get_base_power(sys) # [pu(MVar)]
 ##### TODO: Using v,θ,P,Q to find the parameters and initial conditions
 
 # To get you started, here are the branch parameters
-PSY.show_components(Line, sys, [:r,:x,:b,:arc]) 
+PSY.show_components(Line, sys, [:r, :x, :b, :arc])
+
+# Find complex power
+S = P + im * Q
+
+# Find complex voltage
+V = v .* (cos.(θ) .+ im .* sin.(θ))
+
+# Find complex current
+I = conj(S ./ V)
+
+# DQ components are the real and imaginary components of the complex expressions
+# Node voltages are differential variables, so power flow solution provides initial condition
+vd_init = real(V)
+vq_init = imag(V)
+
+# Node currents are parameters
+id = real(I)
+iq = imag(I)
+
+# Define some arbitrary generator reactances
+x1 = 1.0
+x2 = 1.0
+
+# Find load impedance
+Z = (v .^ 2) ./ S
+Z3 = Z[3]       # The load is at the third bus
+
+# Define state vector
+
+
+# Define parameter vector
 
 
 # -----------------------------------------------------------------------------------------
@@ -60,7 +91,7 @@ M_diagonal = [] ##### TODO: Fill this with the coefficients of the derivatives
 M = Diagonal(M_diagonal)  # creates diagonal square matrix from a vector
 
 # Build function 
-f = ODEFunction(three_bus_network, mass_matrix = M)
+f = ODEFunction(three_bus_network, mass_matrix=M)
 
 # Define length of simulation
 tspan = (0.0, 0.2)
@@ -75,7 +106,7 @@ p = [] ##### TODO: Fill this with parameters you calculated in Section 2
 # NOTE: We want this pre-perturbation initial condition to be an equilibrium point
 du0 = ones(Float64, length(u0)); # return object for three_bus_network()
 three_bus_network(du0, u0, p, 0); # evaluate function once
-if norm(du0,Inf) > 1e-10
+if norm(du0, Inf) > 1e-10
     throw("Residual norm of equilibrium IC is probably too big: $(norm(du0,Inf))")
 else
     println("Residual norm of equilibrium IC looks good: $(norm(du0,Inf))")
@@ -104,10 +135,10 @@ function affect!(integrator)
 end
 
 # Create a Callback function that represents the pertubation 
-cb = DiscreteCallback(condition, affect!) 
+cb = DiscreteCallback(condition, affect!)
 
 # Run simulation
-sol = solve(prob, Rodas5P(), callback = cb, tstops = perturb_times)
+sol = solve(prob, Rodas5P(), callback=cb, tstops=perturb_times)
 
 
 # -----------------------------------------------------------------------------------------
@@ -115,13 +146,13 @@ sol = solve(prob, Rodas5P(), callback = cb, tstops = perturb_times)
 # -----------------------------------------------------------------------------------------
 
 # Plot (examples)
-plot(sol, 
+plot(sol,
     title="Three Bus Network: All Variables",
     xlabel="Time [s]",
-    )
-plot(sol, 
-    idxs = (0,[1,2]), 
+)
+plot(sol,
+    idxs=(0, [1, 2]),
     title="Three Bus Network: Subset of Variables",
     xlabel="Time [s]",
-    label=["label for u[1]" "label for u[2]"], 
-    )
+    label=["label for u[1]" "label for u[2]"],
+)
