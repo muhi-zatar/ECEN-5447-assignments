@@ -9,12 +9,21 @@ using PowerSystems
 
 network = System("data/ThreeBusNetwork.raw")
 
+# Print a description of the network
+print(network)
+
+# Show the different static components
+show_components(network, ACBus)
+show_components(network, Arc)
+show_components(network, StandardLoad)
+show_components(network, ThermalStandard)
+
 ### Buses
 # Bus attributes are defined here:
 # https://nrel-sienna.github.io/PowerSystems.jl/stable/model_library/generated_ACBus/#ACBus
 
-# Access a single bus by passing the network and the bus number
-b1 = get_bus(network, 101)
+# Access a single bus
+bus_1 = get_component(ACBus, network, "BUS 1")
 
 # Access every bus
 for b in get_components(ACBus, network)
@@ -31,6 +40,9 @@ end
 ### Lines
 # Line attributes are defined here:
 # https://nrel-sienna.github.io/PowerSystems.jl/stable/model_library/generated_Line/#Line
+
+# Access a single line
+line_1 = get_component(Arc, network, "BUS 1 -> BUS 3")
 
 # Access every line
 for l in get_components(Line, network)
@@ -54,3 +66,66 @@ for l in get_components(Line, network)
     ang_limits = get_angle_limits(l)
     println(ang_limits)
 end
+
+### Loads
+# Load attributes are defined here:
+#https://nrel-sienna.github.io/PowerSystems.jl/stable/model_library/generated_StandardLoad/
+
+# Access a single load
+load_1 = get_component(StandardLoad, network, "load1011")
+
+# Access every load
+for ld in get_components(StandardLoad, network)
+    # Set attributes
+    set_available!(ld, false)
+    set_max_constant_active_power!(ld, 2.0)
+    set_constant_active_power!(ld, 2.0)
+
+    # Query attributes
+    name = get_name(ld)
+    println(name)
+    bus_name = get_name(get_bus(ld))
+    println(bus_name)
+    base_power = get_base_power(ld)
+    println(base_power)
+end
+
+
+### Generators
+# Generator attributes depend on the type of generation. In this case, the network only has type 
+# "ThermalStandard" generators. Attributes for ThermalStandard generators are defined here:
+# https://nrel-sienna.github.io/PowerSystems.jl/stable/model_library/generated_ThermalStandard/
+
+# Access a single generator
+gen_1 = get_component(ThermalStandard, network, "generator-102-1")
+
+# Access every generator
+for g in get_components(ThermalStandard, network)
+    # Set attributes
+    set_available!(g, false)
+    set_active_power!(g, 1.1)
+    set_active_power_limits!(g, (0.5, 1.5))
+
+    # Query attributes
+    base_power = get_base_power(g)
+    println(base_power)
+    rating = get_rating(g)
+    println(rating)
+    ramp_limits = get_ramp_limits(g)
+    println(ramp_limits)
+
+end
+
+
+### Per-unit
+# Per-unit conventions are described here:
+# https://nrel-sienna.github.io/PowerSystems.jl/stable/explanation/per_unit/
+
+# Find the units base for the system
+units_base = get_units_base(network)
+print(units_base)
+
+# Print the base power in the system units base
+system_base_power = get_base_power(network)
+println(system_base_power)
+
