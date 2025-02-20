@@ -59,10 +59,6 @@ I = conj(S ./ V)
 vd_init = real(V)
 vq_init = imag(V)
 
-# Node currents are parameters
-id = real(I)
-iq = imag(I)
-
 # Define some arbitrary generator reactances
 x1 = 1.0
 x2 = 1.0
@@ -71,11 +67,53 @@ x2 = 1.0
 Z = (v .^ 2) ./ S
 Z3 = Z[3]       # The load is at the third bus
 
-# Define state vector
+# Find Lines
+line_1_2 = get_component(Line, sys, "BUS 1-BUS 2-i_1")
+line_1_3 = get_component(Line, sys, "BUS 1-BUS 3-i_1")
+line_2_3 = get_component(Line, sys, "BUS 2-BUS 3-i_1")
 
+# Define state vector elements
+i_12_d = 0
+i_12_q = 0
+i_13_d = 0
+i_13_q = 0
+i_23_d = 0
+i_23_q = 0
+v_1_d = real(V)[1]
+v_1_q = imag(V)[1]
+v_2_d = real(V)[2]
+v_2_q = imag(V)[1]
+v_3_d = real(V)[3]
+v_3_q = imag(V)[1]
+i_b12_d_1 = 0
+i_b12_q_1 = 0
+i_b12_d_2 = 0
+i_b12_q_2 = 0
+i_b13_d_1 = 0
+i_b13_q_1 = 0
+i_b13_d_3 = 0
+i_b13_q_3 = 0
+i_b23_d_2 = 0
+i_b23_q_2 = 0
+i_b23_d_3 = 0
+i_b23_q_3 = 0
 
-# Define parameter vector
-
+# Define parameter vector elements
+R_12 = get_r(line_1_2)
+X_12 = get_x(line_1_2)
+B_12 = get_b(line_1_2)[1] * 2
+R_13 = get_r(line_1_3)
+X_13 = get_x(line_1_3)
+B_13 = get_b(line_1_3)[1] * 2
+R_23 = get_r(line_2_3)
+X_23 = get_x(line_2_3)
+B_23 = get_b(line_2_3)[1] * 2
+i_1_d = real(I)[1]
+i_1_q = imag(I)[1]
+i_2_d = real(I)[2]
+i_2_q = imag(I)[2]
+i_3_d = real(I)[3]
+i_3_q = imag(I)[3]
 
 # -----------------------------------------------------------------------------------------
 # Section 3: Build ODEProblem
@@ -97,10 +135,17 @@ f = ODEFunction(three_bus_network, mass_matrix=M)
 tspan = (0.0, 0.2)
 
 # Build initial condition vector
-u0 = [] ##### TODO: Fill this with initial conditions you calculated in Section 2
+# Order will be:
+# [i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b12_d_1, i_b12_q_1, i_b12_d_2, i_b12_q_2, i_b13_d_1, i_b13_q_1, i_b13_d_3, i_b13_q_3, i_b23_d_2, i_b23_q_2, i_b23_d_3, i_b23_q_3]
+##### TODO: Fill this with initial conditions you calculated in Section 2
+u0 = [i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b12_d_1, i_b12_q_1, i_b12_d_2, i_b12_q_2, i_b13_d_1, i_b13_q_1, i_b13_d_3, i_b13_q_3, i_b23_d_2, i_b23_q_2, i_b23_d_3, i_b23_q_3]
+
 
 # Build parameter vector
-p = [] ##### TODO: Fill this with parameters you calculated in Section 2
+# Order will be:
+# [R_12, X_12, B_12, R_13, X_13, B_13, R_23, X_23, B_23, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q]
+##### TODO: Fill this with parameters you calculated in Section 2
+p = [R_12, X_12, B_12, R_13, X_13, B_13, R_23, X_23, B_23, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q]
 
 # Check initial condition consistency
 # NOTE: We want this pre-perturbation initial condition to be an equilibrium point
