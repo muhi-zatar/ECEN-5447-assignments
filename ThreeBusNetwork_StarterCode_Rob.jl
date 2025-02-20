@@ -54,11 +54,6 @@ V = v .* (cos.(θ) .+ im .* sin.(θ))
 # Find complex current
 I = conj(S ./ V)
 
-# DQ components are the real and imaginary components of the complex expressions
-# Node voltages are differential variables, so power flow solution provides initial condition
-vd_init = real(V)
-vq_init = imag(V)
-
 # Define some arbitrary generator reactances
 x1 = 1.0
 x2 = 1.0
