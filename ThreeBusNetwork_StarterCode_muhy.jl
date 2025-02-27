@@ -35,7 +35,6 @@ v = pf_result["bus_results"].Vm # [pu-V]
 P = pf_result["bus_results"].P_net / PSY.get_base_power(sys) # [pu(MW)]
 Q = pf_result["bus_results"].Q_net / PSY.get_base_power(sys) # [pu(MVar)]
 
-
 # -----------------------------------------------------------------------------------------
 # Section 2: Calculate relevant quantities needed for running a time domain simulation
 # -----------------------------------------------------------------------------------------
