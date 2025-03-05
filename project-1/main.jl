@@ -1,7 +1,7 @@
 # Ensure script runs in the correct environment
 cd(@__DIR__)
 using Pkg
-Pkg.activate(".")
+Pkg.activate("../.")
 Pkg.resolve()
 Pkg.instantiate()
 
