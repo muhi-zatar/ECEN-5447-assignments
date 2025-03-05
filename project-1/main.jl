@@ -26,6 +26,7 @@ struct MachineParams
     Tq0p::Float64   # q-axis transient open-circuit time constant (s)
     Td0pp::Float64  # d-axis subtransient open-circuit time constant (s)
     Tq0pp::Float64  # q-axis subtransient open-circuit time constant (s)
+    Taa::Float64    # d-axis additional leakage time constant (s)
     Ra::Float64     # Armature resistance
 end
 
@@ -76,6 +77,7 @@ function default_machine_params()
         0.4,    # Tq0p
         0.03,   # Td0pp
         0.05,   # Tq0pp
+        0.00,   # Taa
         0.003   # Ra
     )
 end
@@ -135,63 +137,53 @@ end
 """
 function synchronous_machine_dynamics!(du, u, p, t)
     machine, avr, turbine_gov, network, perturbations = p
-    
+
     # Unpack state variables
-    δ, ω, Eq_p, Ed_p, Eq_pp, Ed_pp, Vr, Vf, Rf, Pg, Pm_hp, Pm_lp = u
-    
+    δ, ω, Eq_p, Ed_p, ψq_pp, ψd_pp, Vr, Vf, Rf, Pg, Pm_hp, Pm_lp = u
+
     # Calculate terminal conditions
     # Stator voltage equations
-    Vd = -network.V_∞ * sin(δ)
-    Vq = network.V_∞ * cos(δ)
-    Re = network.R_e
-    Xe = network.X_e
-    Ze_sq = Re^2 + Xe^2
-    # Calculate machine currents
-    # Subtransient reactances
-    Xd_pp = machine.Xdpp
-    Xq_pp = machine.Xqpp
-    denomId = machine.Xdpp - (machine.Ra^2 / machine.Xqpp)
-    denomIq = machine.Xqpp - (machine.Ra^2 / machine.Xdpp)
+    Vd = network.V_∞ * sin(δ)       # Eqn 15.4
+    Vq = network.V_∞ * cos(δ)       # Eqn 15.4
 
-    Id = (Eq_pp - Vd - (machine.Ra / machine.Xqpp) * (Ed_pp + Vq)) / denomId
-    Iq = (Ed_pp + Vq - (machine.Ra / machine.Xdpp) * (Eq_pp - Vd)) / denomIq
-    
-    # Current equations
-    # Id = (Eq_pp - Vd - machine.Ra * Iq) / (machine.Xdpp + machine.Ra^2/machine.Xqpp)
-    #Iq = (Ed_pp + Vq - machine.Ra * Id) / (machine.Xqpp + machine.Ra^2/machine.Xdpp)
-    # Id = (Eq_pp - Vd - machine.Ra * (Vq - Ed_pp) / Xq_pp) / (machine.Ra^2 / Xq_pp + Xd_pp) # This was wrong implementation
-    # Iq = (Ed_pp + Vq - machine.Ra * (Eq_pp - Vd) / Xd_pp) / (machine.Ra^2 / Xd_pp + Xq_pp) # This was wrong implementation
-    A = [machine.Ra -machine.Xqpp; machine.Xdpp machine.Ra]
-    b = [Eq_pp - Vd; Ed_pp + Vq]
+    # Terminal voltage
+    Vt = sqrt(Vd^2 + Vq^2)
+
+    # Calculate machine currents
+    # Helper variables (Eqn 15.14)
+    γd1 = (machine.Xdpp - machine.Xl) / (machine.Xdp - machine.Xl)
+    γq1 = (machine.Xqpp - machine.Xl) / (machine.Xqp - machine.Xl)
+    γd2 = (1 - γd1) / (machine.Xdp - machine.Xl)
+    γq2 = (1 - γq1) / (machine.Xqp - machine.Xl)
+
+    # Current equations (Use 15.11 and 15.15 to eliminate ψq and ψd, solve for Id and Iq)
+    A = [machine.Xdpp machine.Ra; machine.Ra -machine.Xqpp]
+    b = [-Vq + γd1 * Eq_p + (1 - γd1) * ψd_pp; -Vd + γq1 * Ed_p + (1 - γq1) * ψq_pp]
     currents = A \ b
     Id = currents[1]
     Iq = currents[2]
-    # Terminal voltage
-    Vt = sqrt(Vd^2 + Vq^2)
-    
-    # Electromagnetic torque/power
-    Pe = Vd*Id + Vq*Iq + machine.Ra*(Id^2 + Iq^2)
+
+    # Calculate shaft conditions
+    # Electromagnetic torque/power (Use 15.11 and 15.6 to eliminate ψq and ψd, solve for Te)
+    Pe = Vd * Id + Vq * Iq + machine.Ra * (Id^2 + Iq^2)
     # Te = Pe   # in per unit, torque equals power
-    
+
     # Total mechanical power input
     Pm = Pm_hp + Pm_lp
-    
-    ω_s = 1.0  # Synchronous speed in pu
+
+    # Synchronous speed in pu
+    ω_s = 1.0
+
+    # Shaft mechanical equations (Eqn 15.5)
     du[1] = ω - ω_s  # dδ/dt
-    du[2] = (Pm - Pe - machine.D*(ω - ω_s))/(2.0*machine.H)
-    
-    # Calculate intermediate parameters for the electrical dynamics
-    Ψ1d = Eq_pp + (machine.Xdpp - machine.Xl) * Id
-    Ψ1q = Ed_pp - (machine.Xqpp - machine.Xl) * Iq
-    Ψ2d = Eq_p + (machine.Xdp - machine.Xl) * Id
-    Ψ2q = Ed_p - (machine.Xqp - machine.Xl) * Iq
-    
+    du[2] = (Pm - Pe - machine.D * (ω - ω_s)) / (2.0 * machine.H)
+
     # Electrical dynamics
-    du[3] = (-Eq_p - (machine.Xd - machine.Xdp) * Id + Vf) / machine.Td0p    # dE'q/dt
-    du[4] = (-Ed_p + (machine.Xq - machine.Xqp) * Iq) / machine.Tq0p         # dE'd/dt
-    du[5] = (-Eq_pp + Ψ2d) / machine.Td0pp                                  # dE''q/dt
-    du[6] = (-Ed_pp + Ψ2q) / machine.Tq0pp                                  # dE''d/dt
-    
+    du[3] = (-Eq_p - (machine.Xd - machine.Xdp) * (Id - γd2 * ψd_pp - (1 - γd1) * Id + γd2 * Eq_p) + Vf) / machine.Td0p    # dE'q/dt
+    du[4] = (-Ed_p + (machine.Xq - machine.Xqp) * (Iq - γq2 * ψq_pp - (1 - γq1) * Iq - γd2 * Ed_p)) / machine.Tq0p         # dE'd/dt
+    du[5] = (-ψd_pp + Eq_p - (machine.Xdp - machine.Xl) * Id) / machine.Td0pp                                              # dE''q/dt
+    du[6] = (-ψq_pp - Ed_p - (machine.Xqp - machine.Xl) * Iq) / machine.Tq0pp                                              # dE''d/dt
+
     # Apply voltage perturbation if specified
     Vref = 1.0
     if haskey(perturbations, :v_ref)
@@ -200,7 +192,7 @@ function synchronous_machine_dynamics!(du, u, p, t)
             Vref += v_ref_change
         end
     end
-    
+
     # AVR dynamics (IEEE Type-1)
     du[7] = (-Vr + avr.Ka * (Vref - Vt - Rf)) / avr.Ta  # dVr/dt
     # Limit Vr within bounds
@@ -209,10 +201,10 @@ function synchronous_machine_dynamics!(du, u, p, t)
     elseif Vr < avr.Vr_min && du[7] < 0
         du[7] = 0.0
     end
-    
+
     du[8] = (-Vf * avr.Ke + Vr) / avr.Te  # dVf/dt
     du[9] = (-Rf + avr.Kf * (du[8])) / avr.Tf  # dRf/dt
-    
+
     # Apply load perturbation if specified
     ω_ref = 1.0
     # Apply frequency reference perturbation if defined
@@ -222,7 +214,7 @@ function synchronous_machine_dynamics!(du, u, p, t)
             ω_ref += p_ref_change
         end
     end
-    
+
     # Governor dynamics
     du[10] = (-Pg + (ω_ref - ω) / turbine_gov.R) / turbine_gov.Tg           # dPg/dt
     # Limit Pg within bounds
@@ -231,11 +223,11 @@ function synchronous_machine_dynamics!(du, u, p, t)
     elseif Pg < turbine_gov.P_min && du[10] < 0
         du[10] = 0.0
     end
-    
+
     # Turbine dynamics
     du[11] = (-Pm_hp + turbine_gov.F_hp * Pg) / turbine_gov.T_ch            # dPm_hp/dt
     du[12] = (-Pm_lp + turbine_gov.F_lp * Pg + (Pm_hp - turbine_gov.F_hp * Pg) / turbine_gov.T_rh) / turbine_gov.T_ch  # dPm_lp/dt
-    
+
     # Add numerical stability safeguards
     for i in 1:length(du)
         # Limit the rate of change to reasonable values
@@ -252,14 +244,14 @@ function init_steady_state(machine, avr, turbine_gov, network)
     # Assume initial power output P0 and terminal voltage Vt0
     P0 = 0.8
     Vt0 = 1.0
-    
+
     # Calculate initial machine angle for this power output
     δ0 = asin(P0 * network.X_e / (Vt0 * network.V_∞))
-    
+
     # Calculate initial Vd and Vq
     Vd0 = -network.V_∞ * sin(δ0)
     Vq0 = network.V_∞ * cos(δ0)
-    
+
     S0 = P0  # Assuming unity power factor for simplicity
     I0 = S0 / Vt0
     θ0 = 0.0  # Power angle (assuming unity power factor)
@@ -268,31 +260,31 @@ function init_steady_state(machine, avr, turbine_gov, network)
     Iq0 = I0 * cos(θ0 + δ0)
     # Id0 = (P0 * Vd0) / (Vd0^2 + Vq0^2) # Caused inequilibiruim 
     # Iq0 = (P0 * Vq0) / (Vd0^2 + Vq0^2) # Caused inequilibiruim
-    
+
     # Calculate initial internal voltages
     Eq_pp0 = Vd0 + machine.Ra * Id0 + machine.Xdpp * Iq0
     Ed_pp0 = Vq0 - machine.Ra * Iq0 - machine.Xqpp * Id0
-    
+
     # Calculate intermediate variables
     Ψ1d0 = Eq_pp0 + (machine.Xdpp - machine.Xl) * Id0
     Ψ1q0 = Ed_pp0 - (machine.Xqpp - machine.Xl) * Iq0
-    
+
     # Calculate transient voltages
     Eq_p0 = Eq_pp0 + (machine.Xdp - machine.Xdpp) * Id0
     Ed_p0 = Ed_pp0 - (machine.Xqp - machine.Xqpp) * Iq0
-    
+
     # Initial exciter output
     Vf0 = Eq_p0 + (machine.Xd - machine.Xdp) * Id0
-    
+
     # Initial AVR signals
     Rf0 = 0.0  # assume steady state
     Vr0 = Vf0 * avr.Ke  # steady state value that account for exciter constant
-    
+
     # Initial governor and turbine outputs
     Pg0 = P0
     Pm_hp0 = turbine_gov.F_hp * P0
     Pm_lp0 = turbine_gov.F_lp * P0
-    
+
     u0 = [δ0, 1.0, Eq_p0, Ed_p0, Eq_pp0, Ed_pp0, Vr0, Vf0, Rf0, Pg0, Pm_hp0, Pm_lp0]
 
     # The following lines are sanity checks for the initial conditions
@@ -301,7 +293,7 @@ function init_steady_state(machine, avr, turbine_gov, network)
         machine.Xdpp, machine.Xqpp, machine.Xl, machine.Td0p, machine.Tq0p,
         machine.Td0pp, machine.Tq0pp, machine.Ra
     )
-    
+
     p_init = (machine_high_damping, avr, turbine_gov, network, Dict())
     prob_init = ODEProblem(synchronous_machine_dynamics!, u0, (0.0, 5.0), p_init)
     sol_init = solve(prob_init, Tsit5(), reltol=1e-6, abstol=1e-6)
@@ -317,46 +309,46 @@ function init_steady_state(machine, avr, turbine_gov, network)
     P0 = 0.8  # Active power output
     Q0 = 0.0  # Reactive power (assuming unity power factor)
     Vt0 = 1.0  # Terminal voltage
-    
+
     # Network calculations
     V_inf = network.V_∞
     R_e = network.R_e
     X_e = network.X_e
     Z_e = sqrt(R_e^2 + X_e^2)
     theta_e = atan(X_e, R_e)
-    
+
     δ0 = asin(P0 * network.X_e / network.V_∞)
 
     # Calculate machine angle using power flow equations
     # changed name
     # delta0 = asin((P0*Z_e)/(Vt0*V_inf)) + theta_e
-    
+
     # Terminal voltages
     # Vd0 = -V_inf*sin(delta0)
     # Vq0 = V_inf*cos(delta0)
     Vd0 = -network.V_∞ * sin(δ0)
     Vq0 = network.V_∞ * cos(δ0)
-    
+
     # Machine currents (simplified network equations)
     S0 = complex(P0, Q0)
-    I0_mag = abs(S0/Vt0)
-    I0_ang = angle(S0/Vt0) # Power factor angle
-    
+    I0_mag = abs(S0 / Vt0)
+    I0_ang = angle(S0 / Vt0) # Power factor angle
+
     Id0 = (P0 * Vd0 + Q0 * Vq0) / (Vd0^2 + Vq0^2)
     Iq0 = (P0 * Vq0 - Q0 * Vd0) / (Vd0^2 + Vq0^2)
-    
+
     # Start with simplified model steady state
     # Calculate subtransient EMFs
     Eq_pp0 = Vd0 + machine.Ra * Id0 + machine.Xqpp * Iq0
     Ed_pp0 = Vq0 - machine.Ra * Iq0 - machine.Xdpp * Id0
-    
+
     # Calculate transient EMFs
     Eq_p0 = Eq_pp0 + (machine.Xdp - machine.Xdpp) * Id0
     Ed_p0 = Ed_pp0 - (machine.Xqp - machine.Xqpp) * Iq0
-    
+
     # Field voltage needed for this operating point
     Vf0 = Eq_p0 + (machine.Xd - machine.Xdp) * Id0
-    
+
     # Initial governor and exciter values
     Vr0 = Vf0 * avr.Ke # AVR equilibrium - set Vr to match Vf
 
@@ -364,7 +356,7 @@ function init_steady_state(machine, avr, turbine_gov, network)
     Pg0 = P0
     Pm_hp0 = turbine_gov.F_hp * P0
     Pm_lp0 = turbine_gov.F_lp * P0
-    
+
     # Return true steady-state initial conditions
     return [δ0, 1.0, Eq_p0, Ed_p0, Eq_pp0, Ed_pp0, Vr0, Vf0, Rf0, Pg0, Pm_hp0, Pm_lp0]
 end
@@ -376,23 +368,23 @@ function run_simulation(perturbations, tspan=(0.0, 10.0))
     avr = default_avr_params()
     turbine_gov = default_turbine_gov_params()
     network = default_network_params()
-    
+
     # Pack parameters for ODE solver
     p = (machine=machine, avr=avr, turbine_gov=turbine_gov, network=network, perturbations=perturbations)
-    
+
     function f(du, u, p, t)::Nothing
         synchronous_machine_dynamics!(du, u, (p.machine, p.avr, p.turbine_gov, p.network, p.perturbations), t)
         nothing  # Explicit return of nothing (this was to solve an error, not sure I understand it)
     end
     # Set up initial conditions
     u0 = init_steady_state(machine, avr, turbine_gov, network)
-    
+
     # Define ODE problem
     prob = ODEProblem(f, u0, tspan, p)
-    
+
     # Solve ODE problem
     sol = solve(prob, Tsit5(), reltol=1e-6, abstol=1e-6)
-    
+
     # INITIAL PARAMETERS SANITY CHECK
     u0 = init_steady_state(machine, avr, turbine_gov, network)
     du0 = zeros(12)
@@ -406,7 +398,7 @@ function run_simulation(perturbations, tspan=(0.0, 10.0))
     if maximum(abs.(du0)) > 1e-3
         @warn "System not at equilibrium. Maximum derivative: $(maximum(abs.(du0)))"
     end
-    
+
     return sol
 end
 
@@ -424,54 +416,54 @@ function analyze_results(sol, title_prefix="")
     Pg = [u[10] for u in sol.u]
     Pm_hp = [u[11] for u in sol.u]
     Pm_lp = [u[12] for u in sol.u]
-    
+
     # Calculate terminal voltage at each time step
     Vt = similar(δ)
     Pe = similar(δ)
-    
+
     machine = default_machine_params()
     network = default_network_params()
-    
+
     for i in 1:length(sol.t)
         # Terminal conditions
         Vd = -network.V_∞ * sin(δ[i])
         Vq = network.V_∞ * cos(δ[i])
-        
+
         # Calculate terminal voltage
         Vt[i] = sqrt(Vd^2 + Vq^2)
-        
+
         # Calculate currents
-        Id = (Eq_pp[i] - Vd - machine.Ra * (Vq - Ed_pp[i]) / machine.Xqpp) / 
+        Id = (Eq_pp[i] - Vd - machine.Ra * (Vq - Ed_pp[i]) / machine.Xqpp) /
              (machine.Ra^2 / machine.Xqpp + machine.Xdpp)
         Iq = (Ed_pp[i] + Vq - machine.Ra * (Eq_pp[i] - Vd) / machine.Xdpp) /
              (machine.Ra^2 / machine.Xdpp + machine.Xqpp)
-        
+
         # Calculate electrical power
         Pe[i] = (Vd + machine.Ra * Id) * Id + (Vq + machine.Ra * Iq) * Iq
     end
-    
+
     # Plot results
-    p1 = plot(sol.t, ω, label="ω", title="$(title_prefix) Rotor Speed", 
-              ylabel="ω (pu)", xlabel="Time (s)")
-    
-    p2 = plot(sol.t, δ * 180/π, label="δ", title="$(title_prefix) Rotor Angle", 
-              ylabel="δ (degrees)", xlabel="Time (s)")
-    
-    p3 = plot(sol.t, Vt, label="Vt", title="$(title_prefix) Terminal Voltage", 
-              ylabel="Voltage (pu)", xlabel="Time (s)")
-    
-    p4 = plot(sol.t, Vf, label="Vf", title="$(title_prefix) Field Voltage", 
-              ylabel="Vf (pu)", xlabel="Time (s)")
-    
-    p5 = plot(sol.t, Pe, label="Pe", title="$(title_prefix) Electrical Power", 
-              ylabel="Power (pu)", xlabel="Time (s)")
-    
-    p6 = plot(sol.t, [Pm_hp Pm_lp], label=["Pm_hp" "Pm_lp"], 
-              title="$(title_prefix) Mechanical Power", 
-              ylabel="Power (pu)", xlabel="Time (s)")
-    
+    p1 = plot(sol.t, ω, label="ω", title="$(title_prefix) Rotor Speed",
+        ylabel="ω (pu)", xlabel="Time (s)")
+
+    p2 = plot(sol.t, δ * 180 / π, label="δ", title="$(title_prefix) Rotor Angle",
+        ylabel="δ (degrees)", xlabel="Time (s)")
+
+    p3 = plot(sol.t, Vt, label="Vt", title="$(title_prefix) Terminal Voltage",
+        ylabel="Voltage (pu)", xlabel="Time (s)")
+
+    p4 = plot(sol.t, Vf, label="Vf", title="$(title_prefix) Field Voltage",
+        ylabel="Vf (pu)", xlabel="Time (s)")
+
+    p5 = plot(sol.t, Pe, label="Pe", title="$(title_prefix) Electrical Power",
+        ylabel="Power (pu)", xlabel="Time (s)")
+
+    p6 = plot(sol.t, [Pm_hp Pm_lp], label=["Pm_hp" "Pm_lp"],
+        title="$(title_prefix) Mechanical Power",
+        ylabel="Power (pu)", xlabel="Time (s)")
+
     # Combine plots
-    plot(p1, p2, p3, p4, p5, p6, layout=(3,2), size=(800, 600), legend=true)
+    plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(800, 600), legend=true)
 end
 
 # Run simulations with different perturbations
@@ -508,15 +500,15 @@ function main()
     println("Running Voltage Reference Step Test...")
     sol1 = voltage_reference_step()
     savefig("voltage_step_response.png")
-    
+
     println("Running Load Change Test...")
     sol2 = load_change_step()
     savefig("load_change_response.png")
-    
+
     println("Running Combined Perturbation Test...")
     sol3 = combined_perturbation()
     savefig("combined_perturbation_response.png")
-    
+
     return sol1, sol2, sol3
 end
 
