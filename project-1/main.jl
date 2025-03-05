@@ -9,6 +9,10 @@ Pkg.instantiate()
 using DifferentialEquations
 using Plots
 using LinearAlgebra
+using PowerSystems
+using PowerFlows
+const PSY = PowerSystems
+const PF = PowerFlows
 
 """
     Comprehensive Synchronous Machine Model based on Sauer-Pai approach
@@ -246,6 +250,26 @@ function synchronous_machine_dynamics!(du, u, p, t)
     end
 end
 
+function get_powerflow_results(network_description)
+    # Load raw file into Sienna
+    sys = PSY.System(network_description)
+
+    # Run power flow
+    pf_result = PF.solve_powerflow(ACPowerFlow{}(), sys)
+    PSY.set_units_base_system!(sys, "SYSTEM_BASE")
+
+    # Get power flow output
+    v = pf_result["bus_results"].Vm     # [pu-V]
+    θ = pf_result["bus_results"].θ      # [rad]
+
+    # Sienna exports power injections in MW/MVar, so adjust by system base
+    P = pf_result["bus_results"].P_net / PSY.get_base_power(sys) # [pu(MW)]
+    Q = pf_result["bus_results"].Q_net / PSY.get_base_power(sys) # [pu(MVar)]
+
+    # Return values for Bus 2, where we're placing our model
+    return (v[2], θ[2], P[2], Q[2])
+end
+
 #=
 
 # Function to set up the initial conditions for steady state operation
@@ -313,7 +337,7 @@ function init_steady_state(machine, avr, turbine_gov, network)
 end
 =#
 
-function init_steady_state(machine, avr, turbine_gov, network)
+function init_steady_state(machine, avr, turbine_gov, network, pf_solution)
     """
     This function manages the initialization of the dynamic devices based on a particular power 
     flow solution, as described in Milano Example 9.2. 
@@ -322,11 +346,7 @@ function init_steady_state(machine, avr, turbine_gov, network)
     parameters η_0. 
     """
     # Start with a simpler power flow solution
-    # TO-DO: MAKE THESE PARAMETERS FOR THE FUNCTION
-    V_0 = 1.0   # Terminal voltage magnitude
-    θ_0 = 0.0   # Terminal voltage angle
-    P_0 = 0.8   # Active power output
-    Q_0 = 0.0   # Reactive power (assuming unity power factor)
+    (V_0, θ_0, P_0, Q_0) = pf_solution
 
     # Express terminal voltage as complex value
     v = V_0 * ℯ^(im * θ_0)
@@ -413,8 +433,12 @@ function run_simulation(perturbations, tspan=(0.0, 10.0))
         synchronous_machine_dynamics!(du, u, (p.machine, p.avr, p.turbine_gov, p.network, p.perturbations), t)
         nothing  # Explicit return of nothing (this was to solve an error, not sure I understand it)
     end
+
+    # Find powerflow solution to use for initial conditions
+    pf_solution = get_powerflow_results("../data/ThreeBusMultiLoad.raw")
+
     # Set up initial conditions
-    u0 = init_steady_state(machine, avr, turbine_gov, network)
+    u0 = init_steady_state(machine, avr, turbine_gov, network, pf_solution)
 
     # Define ODE problem
     prob = ODEProblem(f, u0, tspan, p)
@@ -524,15 +548,15 @@ function main()
     sol1 = voltage_reference_step()
     savefig("voltage_step_response.png")
 
-    println("Running Load Change Test...")
-    sol2 = load_change_step()
-    savefig("load_change_response.png")
+    #println("Running Load Change Test...")
+    #sol2 = load_change_step()
+    #savefig("load_change_response.png")
 
-    println("Running Combined Perturbation Test...")
-    sol3 = combined_perturbation()
-    savefig("combined_perturbation_response.png")
+    #println("Running Combined Perturbation Test...")
+    #sol3 = combined_perturbation()
+    #savefig("combined_perturbation_response.png")
 
-    return sol1, sol2, sol3
+    #return sol1, sol2, sol3
 end
 
 # Execute the main function
