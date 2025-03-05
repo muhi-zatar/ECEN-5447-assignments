@@ -64,21 +64,21 @@ end
 # Define default parameters for a typical machine
 function default_machine_params()
     return MachineParams(
-        2.0,    # H
-        10.0,    # D
-        1.81,   # Xd
-        1.76,   # Xq
-        0.3,    # Xdp
-        0.65,   # Xqp
-        0.23,   # Xdpp
-        0.25,   # Xqpp
-        0.15,   # Xl
-        8.0,    # Td0p
-        0.4,    # Tq0p
-        0.03,   # Td0pp
+        3.148,  # H
+        2.0,    # D
+        1.79,   # Xd
+        1.71,   # Xq
+        0.169,  # Xdp
+        0.228,  # Xqp
+        0.135,  # Xdpp
+        0.2,    # Xqpp
+        0.13,   # Xl
+        4.3,    # Td0p
+        0.85,   # Tq0p
+        0.032,  # Td0pp
         0.05,   # Tq0pp
         0.00,   # Taa
-        0.003   # Ra
+        0.002   # Ra
     )
 end
 
