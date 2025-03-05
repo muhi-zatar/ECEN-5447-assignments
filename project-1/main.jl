@@ -381,7 +381,8 @@ function init_steady_state(machine, avr, turbine_gov, network)
 
     # Check validity of initial condition
     du0 = Vector{Float64}(undef, 12) # return object for derivative calculation
-    p = (machine, avr, turbine_gov, network, Nothing)
+    perturbations = d = Dict{String,Int}()
+    p = (machine, avr, turbine_gov, network, perturbations)
     synchronous_machine_dynamics!(du0, u0, p, 0)
 
     println("Initial derivatives:")
