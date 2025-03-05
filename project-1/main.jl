@@ -143,6 +143,7 @@ function synchronous_machine_dynamics!(du, u, p, t)
 
     # Calculate terminal conditions
     # Stator voltage equations
+    # TO-DO: CHECK WHETHER THE BUS ANGLE FROM POWER FLOW SOLUTION SHOULD BE INCLUDED
     Vd = network.V_∞ * sin(δ)       # Eqn 15.4
     Vq = network.V_∞ * cos(δ)       # Eqn 15.4
 
@@ -305,60 +306,87 @@ end
 =#
 
 function init_steady_state(machine, avr, turbine_gov, network)
+    """
+    This function manages the initialization of the dynamic devices based on a particular power 
+    flow solution, as described in Milano Example 9.2. 
+    From a given V_0, θ_0, P_h,i0, and Q_h,i0, this function will extract the 
+    internal state variable vector x_i0, internal algebraic variables ŷ_i0, and/or controllable
+    parameters η_0. 
+    """
     # Start with a simpler power flow solution
-    P0 = 0.8  # Active power output
-    Q0 = 0.0  # Reactive power (assuming unity power factor)
-    Vt0 = 1.0  # Terminal voltage
+    # TO-DO: MAKE THESE PARAMETERS FOR THE FUNCTION
+    V_0 = 1.0   # Terminal voltage magnitude
+    θ_0 = 0.0   # Terminal voltage angle
+    P_0 = 0.8   # Active power output
+    Q_0 = 0.0   # Reactive power (assuming unity power factor)
 
-    # Network calculations
-    V_inf = network.V_∞
-    R_e = network.R_e
-    X_e = network.X_e
-    Z_e = sqrt(R_e^2 + X_e^2)
-    theta_e = atan(X_e, R_e)
+    # Express terminal voltage as complex value
+    v = V_0 * ℯ^(im * θ_0)
 
-    δ0 = asin(P0 * network.X_e / network.V_∞)
+    # Calculate initial current injection
+    i = conj(complex(P_0, Q_0)) / conj(v)
 
-    # Calculate machine angle using power flow equations
-    # changed name
-    # delta0 = asin((P0*Z_e)/(Vt0*V_inf)) + theta_e
+    # Calculate initial rotor angle
+    δ0 = angle(v + complex(machine.Ra, machine.Xq) * i)             # Eqn. 9.11
 
-    # Terminal voltages
-    # Vd0 = -V_inf*sin(delta0)
-    # Vq0 = V_inf*cos(delta0)
-    Vd0 = -network.V_∞ * sin(δ0)
-    Vq0 = network.V_∞ * cos(δ0)
+    # Convert terminal voltage and current to DQ frame              # Eqn. 9.12
+    # Voltage
+    vdq = v * ℯ^(-1 * im * (δ0 - π / 2))
+    Vd_0 = real(vdq)
+    Vq_0 = imag(vdq)
 
-    # Machine currents (simplified network equations)
-    S0 = complex(P0, Q0)
-    I0_mag = abs(S0 / Vt0)
-    I0_ang = angle(S0 / Vt0) # Power factor angle
+    # Current
+    idq = i * ℯ^(-1 * im * (δ0 - π / 2))
+    Id_0 = real(idq)
+    Iq_0 = imag(idq)
 
-    Id0 = (P0 * Vd0 + Q0 * Vq0) / (Vd0^2 + Vq0^2)
-    Iq0 = (P0 * Vq0 - Q0 * Vd0) / (Vd0^2 + Vq0^2)
+    # Prepare Milano's helper variables for the next step           # Eqn. 15.14
+    γd1 = (machine.Xdpp - machine.Xl) / (machine.Xdp - machine.Xl)
+    γq1 = (machine.Xqpp - machine.Xl) / (machine.Xqp - machine.Xl)
 
-    # Start with simplified model steady state
-    # Calculate subtransient EMFs
-    Eq_pp0 = Vd0 + machine.Ra * Id0 + machine.Xqpp * Iq0
-    Ed_pp0 = Vq0 - machine.Ra * Iq0 - machine.Xdpp * Id0
+    # Calculate the internal states
+    # System of equations found by combining Eqn 15.11 and 15.15, then rearranging 15.12 assuming 
+    # steady-state conditions (all derivatives are zero)
+    A = [-γq1 0 0 (1-γq1) 0;
+        0 γd1 (1-γd1) 0 0;
+        0 1 -1 0 0;
+        -1 0 0 -1 0;
+        0 -1 0 0 1]
+    b = [machine.Xqpp * Iq_0 - machine.Ra * Id_0 - Vd_0;
+        machine.Ra * Iq_0 + machine.Xdpp * Id_0 + Vq_0;
+        (machine.Xdp - machine.Xl) * Id_0;
+        (machine.Xqp - machine.Xl) * Iq_0;
+        (machine.Xd - machine.Xdp) * Id_0]
 
-    # Calculate transient EMFs
-    Eq_p0 = Eq_pp0 + (machine.Xdp - machine.Xdpp) * Id0
-    Ed_p0 = Ed_pp0 - (machine.Xqp - machine.Xqpp) * Iq0
-
-    # Field voltage needed for this operating point
-    Vf0 = Eq_p0 + (machine.Xd - machine.Xdp) * Id0
+    (Ed_p0, Eq_p0, ψd_pp0, ψq_pp0, Vf_0) = A \ b
 
     # Initial governor and exciter values
-    Vr0 = Vf0 * avr.Ke # AVR equilibrium - set Vr to match Vf
+    Vr_0 = Vf_0 * avr.Ke # AVR equilibrium - set Vr to match Vf
 
-    Rf0 = avr.Kf * Vf0 / avr.Te #  Rate feedback in equilibrium
-    Pg0 = P0
-    Pm_hp0 = turbine_gov.F_hp * P0
-    Pm_lp0 = turbine_gov.F_lp * P0
+    Rf_0 = avr.Kf * Vf_0 / avr.Te #  Rate feedback in equilibrium
+    Pg_0 = P_0
+    Pm_hp0 = turbine_gov.F_hp * P_0
+    Pm_lp0 = turbine_gov.F_lp * P_0
+
+    # Pack calculated initial states into a single vector
+    u0 = [δ0, 1.0, Eq_p0, Ed_p0, ψq_pp0, ψd_pp0, Vr_0, Vf_0, Rf_0, Pg_0, Pm_hp0, Pm_lp0]
+
+    # Check validity of initial condition
+    du0 = Vector{Float64}(undef, 12) # return object for derivative calculation
+    p = (machine, avr, turbine_gov, network, Nothing)
+    synchronous_machine_dynamics!(du0, u0, p, 0)
+
+    println("Initial derivatives:")
+    for i in 1:length(du0)
+        println("du[$i] = $(du0[i])")
+    end
+
+    if maximum(abs.(du0)) > 1e-3
+        @warn "System not at equilibrium. Maximum derivative: $(maximum(abs.(du0)))"
+    end
 
     # Return true steady-state initial conditions
-    return [δ0, 1.0, Eq_p0, Ed_p0, Eq_pp0, Ed_pp0, Vr0, Vf0, Rf0, Pg0, Pm_hp0, Pm_lp0]
+    return u0
 end
 
 # Function to run a simulation with specified perturbations
@@ -384,20 +412,6 @@ function run_simulation(perturbations, tspan=(0.0, 10.0))
 
     # Solve ODE problem
     sol = solve(prob, Tsit5(), reltol=1e-6, abstol=1e-6)
-
-    # INITIAL PARAMETERS SANITY CHECK
-    u0 = init_steady_state(machine, avr, turbine_gov, network)
-    du0 = zeros(12)
-    synchronous_machine_dynamics!(du0, u0, (machine, avr, turbine_gov, network, Dict()), 0.0)
-
-    println("Initial derivatives:")
-    for i in 1:length(du0)
-        println("du[$i] = $(du0[i])")
-    end
-
-    if maximum(abs.(du0)) > 1e-3
-        @warn "System not at equilibrium. Maximum derivative: $(maximum(abs.(du0)))"
-    end
 
     return sol
 end
