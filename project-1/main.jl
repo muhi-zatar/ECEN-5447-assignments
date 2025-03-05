@@ -401,7 +401,7 @@ function init_steady_state(machine, avr, turbine_gov, network, pf_solution)
 
     # Check validity of initial condition
     du0 = Vector{Float64}(undef, 12) # return object for derivative calculation
-    perturbations = d = Dict{String,Int}()
+    perturbations = Dict{String,Int}()
     p = (machine, avr, turbine_gov, network, perturbations)
     synchronous_machine_dynamics!(du0, u0, p, 0)
 
