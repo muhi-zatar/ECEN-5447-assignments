@@ -171,7 +171,7 @@ function synchronous_machine_dynamics!(du, u, p, t)
 
     # Current equations (Use 15.11 and 15.15 to eliminate ψq and ψd, solve for Id and Iq)
     A = [machine.Xdpp machine.Ra; machine.Ra -machine.Xqpp]
-    b = [-Vq + γd1 * Eq_p + (1 - γd1) * ψd_pp; -Vd + γq1 * Ed_p + (1 - γq1) * ψq_pp]
+    b = [-Vq + γd1 * Eq_p + (1 - γd1) * ψd_pp; -Vd + γq1 * Ed_p - (1 - γq1) * ψq_pp]
     currents = A \ b
     Id = currents[1]
     Iq = currents[2]
@@ -191,11 +191,11 @@ function synchronous_machine_dynamics!(du, u, p, t)
     du[1] = ω - ω_s  # dδ/dt
     du[2] = (Pm - Pe - machine.D * (ω - ω_s)) / (2.0 * machine.H)
 
-    # Electrical dynamics
+    # Electrical dynamics (Eqn. 15.13)
     du[3] = (-Eq_p - (machine.Xd - machine.Xdp) * (Id - γd2 * ψd_pp - (1 - γd1) * Id + γd2 * Eq_p) + Vf) / machine.Td0p    # dE'q/dt
-    du[4] = (-Ed_p + (machine.Xq - machine.Xqp) * (Iq - γq2 * ψq_pp - (1 - γq1) * Iq - γd2 * Ed_p)) / machine.Tq0p         # dE'd/dt
-    du[5] = (-ψd_pp + Eq_p - (machine.Xdp - machine.Xl) * Id) / machine.Td0pp                                              # dE''q/dt
-    du[6] = (-ψq_pp - Ed_p - (machine.Xqp - machine.Xl) * Iq) / machine.Tq0pp                                              # dE''d/dt
+    du[4] = (-Ed_p + (machine.Xq - machine.Xqp) * (Iq - γq2 * ψq_pp - (1 - γq1) * Iq - γq2 * Ed_p)) / machine.Tq0p         # dE'd/dt
+    du[5] = (-ψd_pp + Eq_p - (machine.Xdp - machine.Xl) * Id) / machine.Td0pp                                              # dψ''q/dt
+    du[6] = (-ψq_pp - Ed_p - (machine.Xqp - machine.Xl) * Iq) / machine.Tq0pp                                              # dψ''d/dt
 
     # Apply voltage perturbation if specified
     Vref = 1.0
