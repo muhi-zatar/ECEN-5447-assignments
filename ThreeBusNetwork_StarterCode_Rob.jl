@@ -236,14 +236,14 @@ end
 # Define the perturbation 
 
 function affect!(integrator)
-    integrator.p[3] *= 1.5 ##### TODO: Change 999 to index of the load impedance parameter
+    integrator.p[999] *= 1.5 ##### TODO: Change 999 to index of the load impedance parameter
 end
 
 # Create a Callback function that represents the pertubation 
 cb = DiscreteCallback(condition, affect!)
 
 # Run simulation
-sol = solve(prob, Rodas5P(), callback=cb, tstops=perturb_times)
+sol = solve(prob, Rodas5P())
 
 
 # -----------------------------------------------------------------------------------------
@@ -256,8 +256,20 @@ plot(sol,
     xlabel="Time [s]",
 )
 plot(sol,
-    idxs=(0, [1, 2]),
-    title="Three Bus Network: Subset of Variables",
+    idxs=(0, collect(1:6)),
+    title="Three Bus Network: Branch Currents",
     xlabel="Time [s]",
-    label=["label for u[1]" "label for u[2]"],
+    label=["i_12_d" "i_12_q" "i_13_d" "i_13_q" "i_23_d" "i_23_q"],
+)
+plot(sol,
+    idxs=(0, collect(7:12)),
+    title="Three Bus Network: Bus Voltages",
+    xlabel="Time [s]",
+    label=["v_1_d" "v_1_q" "v_2_d" "v_2_q" "v_3_d" "v_3_q"],
+)
+plot(sol,
+    idxs=(0, collect(13:18)),
+    title="Three Bus Network: Shunt Currents",
+    xlabel="Time [s]",
+    label=["i_b1_d" "i_b1_q" "i_b2_d" "i_b2_q" "i_b3_d" "i_b3_q"],
 )
