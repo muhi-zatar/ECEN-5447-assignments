@@ -105,6 +105,11 @@ i_2_q = i_q[2]
 i_3_d = i_d[3]
 i_3_q = i_q[3]
 
+# Introduce net susceptance variables
+B_1 = (B_12 / 2) + (B_13 / 2)                       # Shunt susceptance at Bus 1
+B_2 = (B_12 / 2) + (B_23 / 2)                       # Shunt susceptance at Bus 2
+B_3 = (B_13 / 2) + (B_23 / 2)                       # Shunt susceptance at Bus 3
+
 # Define state vector elements (Assume steady-state)
 v_1_d = v_d[1]                                      # Bus 1 d-axis terminal voltage             
 v_1_q = v_q[1]                                      # Bus 1 q-axis terminal voltage             
@@ -112,42 +117,36 @@ v_2_d = v_d[2]                                      # Bus 2 d-axis terminal volt
 v_2_q = v_q[2]                                      # Bus 2 q-axis terminal voltage             
 v_3_d = v_d[3]                                      # Bus 3 d-axis terminal voltage             
 v_3_q = v_q[3]                                      # Bus 3 q-axis terminal voltage  
-i_b12_d_1 = -1 * (B_12 / 2) * v_1_q                 # Line 1-2 d-axis shunt current at bus 1
-i_b12_q_1 = (B_12 / 2) * v_1_d                      # Line 1-2 q-axis shunt current at bus 1
-i_b12_d_2 = -1 * (B_12 / 2) * v_2_q                 # Line 1-2 d-axis shunt current at bus 2
-i_b12_q_2 = (B_12 / 2) * v_2_d                      # Line 1-2 q-axis shunt current at bus 2
-i_b13_d_1 = -1 * (B_13 / 2) * v_1_q                 # Line 1-3 d-axis shunt current at bus 1
-i_b13_q_1 = (B_13 / 2) * v_1_d                      # Line 1-3 q-axis shunt current at bus 1
-i_b13_d_3 = -1 * (B_13 / 2) * v_3_q                 # Line 1-3 d-axis shunt current at bus 3
-i_b13_q_3 = (B_13 / 2) * v_3_d                      # Line 1-3 q-axis shunt current at bus 3
-i_b23_d_2 = -1 * (B_23 / 2) * v_2_q                 # Line 2-3 d-axis shunt current at bus 2
-i_b23_q_2 = (B_23 / 2) * v_1_d                      # Line 2-3 q-axis shunt current at bus 2
-i_b23_d_3 = -1 * (B_23 / 2) * v_3_q                 # Line 2-3 d-axis shunt current at bus 3
-i_b23_q_3 = (B_23 / 2) * v_3_d                      # Line 2-3 q-axis shunt current at bus 3
+i_b1_d = -1 * B_1 * v_1_q                           # Bus 1 d-axis shunt current
+i_b1_q = B_1 * v_1_d                                # Bus 1 q-axis shunt current
+i_b2_d = -1 * B_2 * v_2_q                           # Bus 2 d-axis shunt current
+i_b2_q = B_2 * v_2_d                                # Bus 2 q-axis shunt current
+i_b3_d = -1 * B_3 * v_3_q                           # Bus 3 d-axis shunt current
+i_b3_q = B_3 * v_3_d                                # Bus 3 q-axis shunt current
 
 # Still working on this – using the pseudoinverse for now because the A matrix is singular
 A = [1 1 0; 1 0 -1; 0 1 1]
-b = [i_1_d - (i_b12_d_1 + i_b13_d_1); (i_b12_d_2 + i_b23_d_2) - i_2_d; (i_b13_d_3 + i_b23_d_3) - i_3_d]
+b = [i_1_d - i_b1_d; i_b2_d - i_2_d; i_b3_d - i_3_d]
 (i_12_d, i_13_d, i_23_d) = pinv(A) * b
 
 A = [1 1 0; 1 0 -1; 0 1 1]
-b = [i_1_q - (i_b12_q_1 + i_b13_q_1); (i_b12_q_2 + i_b23_q_2) - i_2_q; (i_b13_q_3 + i_b23_q_3) - i_3_q]
+b = [i_1_q - i_b1_q; i_b2_q - i_2_q; i_b3_q - i_3_q]
 (i_12_q, i_13_q, i_23_q) = pinv(A) * b
 
 # Sanity check
 res_i = [
-    i_1_d - i_12_d - i_13_d - i_b12_d_1 - i_b13_d_1;
-    i_1_q - i_12_q - i_13_q - i_b12_q_1 - i_b13_q_1;
-    i_2_d + i_12_d - i_23_d - i_b12_d_2 - i_b23_d_2;
-    i_2_q + i_12_q - i_23_q - i_b12_q_2 - i_b23_q_2;
-    i_3_d + i_23_d + i_13_d - i_b13_d_3 - i_b23_d_3;
-    i_3_q + i_23_q + i_13_q - i_b13_q_3 - i_b23_q_3
+    i_1_d - i_12_d - i_13_d - i_b1_d;
+    i_1_q - i_12_q - i_13_q - i_b1_q;
+    i_2_d + i_12_d - i_23_d - i_b2_d;
+    i_2_q + i_12_q - i_23_q - i_b2_q;
+    i_3_d + i_23_d + i_13_d - i_b3_d;
+    i_3_q + i_23_q + i_13_q - i_b3_q
 ]
 
 if norm(res_i, Inf) > 1e-10
     @warn "DQ current calculation is probably wrong. Unaccounted for current: $(norm(res_i,Inf))"
 else
-    println("DQ current calculation looks good. Unaccounted for current: $(norm(res_i - S,Inf))")
+    println("DQ current calculation looks good. Unaccounted for current: $(norm(res_i,Inf))")
 end
 
 # -----------------------------------------------------------------------------------------
@@ -156,51 +155,41 @@ end
 
 # Define function to be used by integration method 
 function three_bus_network(du, u, p, t)
-    i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b12_d_1, i_b12_q_1, i_b12_d_2, i_b12_q_2, i_b13_d_1, i_b13_q_1, i_b13_d_3, i_b13_q_3, i_b23_d_2, i_b23_q_2, i_b23_d_3, i_b23_q_3 = u
-    R_12, X_12, B_12, R_13, X_13, B_13, R_23, X_23, B_23, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q = p
-
-    # Helper variables
-    B1_eq = (B_12 + B_13)
-    B2_eq = (B_12 + B_23)
-    B3_eq = (B_13 + B_23)
+    i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b1_d, i_b1_q, i_b2_d, i_b2_q, i_b3_d, i_b3_q = u
+    R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q = p
 
     # Define equations in the same order as the u vector
     # Line currents (differential)
-    du[1] = (v_1_d - v_2_d - R_12 * i_12_d + X_12 * i_12_q) / X_12          # d/dt (i_12_d)
-    du[2] = (v_1_q - v_2_q - R_12 * i_12_q - X_12 * i_12_d) / X_12          # d/dt (i_12_q)
-    du[3] = (v_1_d - v_3_d - R_13 * i_13_d + X_13 * i_13_q) / X_13          # d/dt (i_13_d)
-    du[4] = (v_1_q - v_3_q - R_13 * i_13_q - X_13 * i_13_d) / X_13          # d/dt (i_13_q)
-    du[5] = (v_2_d - v_3_d - R_23 * i_23_d + X_23 * i_23_q) / X_23          # d/dt (i_23_d)
-    du[6] = (v_2_q - v_3_q - R_23 * i_23_q - X_23 * i_23_d) / X_23          # d/dt (i_23_q)
+    du[1] = (v_1_d - v_2_d - R_12 * i_12_d + X_12 * i_12_q)                 # d/dt (i_12_d) != 0
+    du[2] = (v_1_q - v_2_q - R_12 * i_12_q - X_12 * i_12_d)                 # d/dt (i_12_q) != 0
+    du[3] = (v_1_d - v_3_d - R_13 * i_13_d + X_13 * i_13_q)                 # d/dt (i_13_d) != 0
+    du[4] = (v_1_q - v_3_q - R_13 * i_13_q - X_13 * i_13_d)                 # d/dt (i_13_q) != 0
+    du[5] = (v_2_d - v_3_d - R_23 * i_23_d + X_23 * i_23_q)                 # d/dt (i_23_d) != 0
+    du[6] = (v_2_q - v_3_q - R_23 * i_23_q - X_23 * i_23_d)                 # d/dt (i_23_q) != 0
 
     # Bus voltages (differential)
-    du[7] = (B1_eq / 2) * v_1_q + i_b12_d_1 + i_b13_d_1                     # d/dt (v_1_d)
-    du[8] = -1 * (B1_eq / 2) * v_1_d + i_b12_q_1 + i_b13_q_1                # d/dt (v_1_q)
-    du[9] = (B2_eq / 2) * v_2_q + i_b12_d_2 + i_b23_d_2                     # d/dt (v_2_d)
-    du[10] = -1 * (B2_eq / 2) * v_2_d + i_b12_q_2 + i_b23_q_2               # d/dt (v_2_q)
-    du[11] = (B3_eq / 2) * v_3_q + i_b23_d_3 + i_b13_d_3                    # d/dt (v_3_d)
-    du[12] = -1 * (B3_eq / 2) * v_3_d + i_b23_q_3 + i_b13_q_3               # d/dt (v_3_q)
+    du[7] = i_b1_d + B_1 * v_1_q                                            # d/dt (v_1_d) != 0
+    du[8] = i_b1_q - B_1 * v_1_d                                            # d/dt (v_1_q) != 0
+    du[9] = i_b2_d + B_2 * v_2_q                                            # d/dt (v_2_d) != 0
+    du[10] = i_b2_q - B_2 * v_2_d                                           # d/dt (v_2_q) != 0
+    du[11] = i_b3_d + B_3 * v_3_q                                           # d/dt (v_3_d) != 0
+    du[12] = i_b3_q - B_3 * v_3_d                                           # d/dt (v_3_q) != 0
 
     # Shunt currents (algebraic)
-    # Line 1-2
-    du[13] = i_1_d - i_12_d - i_13_d - i_b12_d_1 - i_b13_d_1                 # d/dt (i_b12_d_1) = 0
-    du[14] = i_1_q - i_12_q - i_13_q - i_b12_q_1 - i_b13_q_1                 # d/dt (i_b12_q_1) = 0
-    du[15] = i_2_d + i_12_d - i_23_d - i_b12_d_2 - i_b23_d_2                 # d/dt (i_b12_d_2) = 0
-    du[16] = i_2_q + i_12_q - i_23_q - i_b12_q_2 - i_b23_q_2                 # d/dt (i_b12_q_2) = 0
-    # Line 1-3
-    du[17] = i_1_d - i_12_d - i_13_d - i_b12_d_1 - i_b13_d_1                 # d/dt (i_b13_d_1) = 0
-    du[18] = i_1_q - i_12_q - i_13_q - i_b12_q_1 - i_b13_q_1                 # d/dt (i_b13_q_1) = 0
-    du[19] = i_3_d + i_23_d + i_13_d - i_b23_d_3 - i_b13_d_3                 # d/dt (i_b13_d_3) = 0
-    du[20] = i_3_q + i_23_q + i_13_q - i_b23_q_3 - i_b13_q_3                 # d/dt (i_b13_q_3) = 0
-    # Line 2-3
-    du[21] = i_2_d + i_12_d - i_23_d - i_b12_d_2 - i_b23_d_2                 # d/dt (i_b23_d_2) = 0
-    du[22] = i_2_q + i_12_q - i_23_q - i_b12_q_2 - i_b23_q_2                 # d/dt (i_b23_q_2) = 0
-    du[23] = i_3_d + i_23_d + i_13_d - i_b23_d_3 - i_b13_d_3                 # d/dt (i_b23_d_3) = 0
-    du[24] = i_3_q + i_23_q + i_13_q - i_b23_q_3 - i_b13_q_3                 # d/dt (i_b23_q_3) = 0
+    # Bus 1
+    du[13] = i_1_d - i_12_d - i_13_d - i_b1_d                               # d/dt (i_b1_d) = 0
+    du[14] = i_1_q - i_12_q - i_13_q - i_b1_q                               # d/dt (i_b1_q) = 0
+    # Bus 2
+    du[15] = i_2_d + i_12_d - i_23_d - i_b2_d                               # d/dt (i_b2_d) = 0
+    du[16] = i_2_q + i_12_q - i_23_q - i_b2_q                               # d/dt (i_b2_q) = 0
+    # Bus 3
+    du[17] = i_3_d + i_23_d + i_13_d - i_b3_d                               # d/dt (i_b3_d) = 0
+    du[18] = i_3_q + i_23_q + i_13_q - i_b3_q                               # d/dt (i_b3_q) = 0
+
 end
 
 # Build the mass matrix
-M_diagonal = [ones(12); zeros(12)]
+M_diagonal = [X_12, X_12, X_13, X_13, X_23, X_23, B_1, B_1, B_2, B_2, B_3, B_3, 0, 0, 0, 0, 0, 0]
 M = Diagonal(M_diagonal)  # creates diagonal square matrix from a vector
 
 # Build function 
@@ -211,14 +200,12 @@ tspan = (0.0, 0.2)
 
 # Build initial condition vector
 # Order will be:
-#u0= [i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b12_d_1, i_b12_q_1, i_b12_d_2, i_b12_q_2, i_b13_d_1, i_b13_q_1, i_b13_d_3, i_b13_q_3, i_b23_d_2, i_b23_q_2, i_b23_d_3, i_b23_q_3]
-u0 = [i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b12_d_1, i_b12_q_1, i_b12_d_2, i_b12_q_2, i_b13_d_1, i_b13_q_1, i_b13_d_3, i_b13_q_3, i_b23_d_2, i_b23_q_2, i_b23_d_3, i_b23_q_3]
+u0 = [i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b1_d, i_b1_q, i_b2_d, i_b2_q, i_b3_d, i_b3_q]
 
 
 # Build parameter vector
 # Order will be:
-#p= [R_12, X_12, B_12, R_13, X_13, B_13, R_23, X_23, B_23, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q]
-p = [R_12, X_12, B_12, R_13, X_13, B_13, R_23, X_23, B_23, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q]
+p = [R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q]
 
 # Check initial condition consistency
 # NOTE: We want this pre-perturbation initial condition to be an equilibrium point
@@ -249,7 +236,7 @@ end
 # Define the perturbation 
 
 function affect!(integrator)
-    integrator.p[999] *= 1.5 ##### TODO: Change 999 to index of the load impedance parameter
+    integrator.p[3] *= 1.5 ##### TODO: Change 999 to index of the load impedance parameter
 end
 
 # Create a Callback function that represents the pertubation 
