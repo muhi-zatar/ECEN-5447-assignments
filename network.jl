@@ -7,7 +7,7 @@ Pkg.instantiate() # install missing dependencies, make sure environment is ready
 # Import packages
 using PowerSystems
 
-network = System("data/ThreeBusNetwork.raw")
+network = System("data/ThreeBusMultiLoad.raw")
 
 # Print a description of the network
 print(network)
@@ -24,17 +24,23 @@ show_components(network, ThermalStandard)
 
 # Access a single bus
 bus_1 = get_component(ACBus, network, "BUS 1")
+bus_2 = get_component(ACBus, network, "BUS 2")
+bus_3 = get_component(ACBus, network, "BUS 3")
 
 # Access every bus
 for b in get_components(ACBus, network)
     # Set attributes:
-    set_voltage_limits!(b, (0.9, 1.1))
+    #set_voltage_limits!(b, (0.9, 1.1))
 
     # Query attributes:
-    mag = get_magnitude(b)
-    print(mag)
-    ang = get_angle(b)
-    print(ang)
+    println("Bus: $(get_name(b))\n")
+    println("Bus number: $(get_number(b))\n")
+    println("Type = $(get_bustype(b))\n")
+    println("Base voltage: $(get_base_voltage(b))\n")
+    #mag = get_magnitude(b)
+    #print(mag)
+    #ang = get_angle(b)
+    #print(ang)
 end
 
 ### Lines
@@ -42,7 +48,9 @@ end
 # https://nrel-sienna.github.io/PowerSystems.jl/stable/model_library/generated_Line/#Line
 
 # Access a single line
-line_1 = get_component(Arc, network, "BUS 1 -> BUS 3")
+line_12 = get_component(Line, network, "BUS 1-BUS 2-i_1")
+line_13 = get_component(Line, network, "BUS 1-BUS 3-i_1")
+line_23 = get_component(Line, network, "BUS 2-BUS 3-i_1")
 
 # Access every line
 for l in get_components(Line, network)
