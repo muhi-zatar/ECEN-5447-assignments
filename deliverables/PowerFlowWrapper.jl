@@ -21,14 +21,17 @@ Returns the voltage magnitude, angle, active power, and reactive power for the r
 - Tuple of (voltage magnitude, voltage angle, active power, reactive power) at the required bus (bus 2 fo our case)
 """
 function get_powerflow_results(network_description)
+    # TODO: Add the number of bus in the input to make the output bus configurable (for return values).
     # Loading the network data using power systems package
     sys = PSY.System(network_description)
 
     # Running power flow with PowerFlows Package
     pf_result = PF.solve_powerflow(PF.ACPowerFlow(), sys)
+    # TODO: Check if system base is 100
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
 
     # Extracting the output of power flow
+    # From Fiona's code
     v = pf_result["bus_results"].Vm     # [pu-V]
     θ = pf_result["bus_results"].θ      # [rad]
 
