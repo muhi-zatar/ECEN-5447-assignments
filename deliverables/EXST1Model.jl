@@ -13,6 +13,7 @@ const VFB_IDX = 4
 # EXST1 Automatic Voltage Regulator model structure
 mutable struct EXST1
     # AVR parameters
+    # As defined in the PowerWorld document
     Tr::Float64      # Filter time constant
     Vi_min::Float64  # Input limits minimum
     Vi_max::Float64  # Input limits maximum
@@ -27,7 +28,7 @@ mutable struct EXST1
     Tf::Float64      # Rate feedback time constant
     V_ref::Float64   # Reference voltage
     
-    # Constructor with given values
+    # Constructor with given values in the project description
     function EXST1(;
         Tr = 0.01,
         Vi_min = -5.0,
@@ -47,6 +48,8 @@ mutable struct EXST1
     end
 end
 
+# TODO: Check if these helper function behave as they should
+# When checked against Jose's implementation in the julia package, they are not the same.
 # Bunch of helper functions for the AVR blocks
 function clamp(value, min_val, max_val)
     return max(min(value, max_val), min_val)
@@ -85,7 +88,13 @@ function lead_lag_mass_matrix(input, state, gain, t_numerator, t_denominator)
         return gain * input, 0.0
     end
 end
-# Done with helper functions
+# END OF HELPER FUNCTIONS
+
+```
+The module has two functions:
+Initializing states, and updating states
+This will help us in scalability
+```
 
 # Initialize AVR states
 function initialize_avr(avr::EXST1, V_terminal_magnitude, Xad_Ifd = 0.0)
@@ -93,13 +102,14 @@ function initialize_avr(avr::EXST1, V_terminal_magnitude, Xad_Ifd = 0.0)
     Vm = V_terminal_magnitude
     
     # At steady state, Vfb would be zero (output of high-pass filter)
+    # TODO: Check this
     Vfb = 0.0
     
     # Calculate Vr at steady state - this would be the field voltage
     # adjusted by system constraints
     Vr = avr.V_ref
     
-    # Vrll is the output of the lead-lag block
+    # Vrll is the output of the lead/lag block
     Vrll = Vr / avr.Ka
     
     # Return initial states
@@ -111,7 +121,7 @@ function update_avr_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
     V_terminal_magnitude::Float64,
-    Vss::Float64,  # PSS output
+    Vss::Float64,  # PSS output (NOT REQUIRED, SO WILL BE SET TO ZERO)
     Ifd::Float64,  # Field current
     avr::EXST1
 )
@@ -121,8 +131,11 @@ function update_avr_states!(
     Vr = states[VR_IDX]
     Vfb = states[VFB_IDX]
     
-    # Reference voltage with PSS correction (but we dont have PSS)
+    # Reference voltage with PSS correction (but we dont have PSS) uncomment when we need PSS
     # V_ref = avr.V_ref + Vss
+
+    # Without PSS
+    V_ref = avr.V_ref
 
     
     # Calculate block outputs and derivatives
@@ -132,7 +145,7 @@ function update_avr_states!(
     y_hp, dVfb_dt = high_pass(Vr, Vfb, avr.Kf, avr.Tf)
     
     # Lead-lag compensator
-    compensator_input = clamp(V_ref - Vm - y_hp, avr.Vi_min, avr.Vi_max)
+    compensator_input = clamp(avr.V_ref - Vm - y_hp, avr.Vi_min, avr.Vi_max)
     y_ll, dVrll_dt = lead_lag_mass_matrix(compensator_input, Vrll, 1.0, avr.Tc, avr.Tb)
     
     # Amplifier block
