@@ -85,6 +85,12 @@ function clamp(value, min_val, max_val)
 end
 # END OF HELPER FUNCTIONS
 
+```
+The module has two functions:
+Initializing states, and updating states
+This will help us in scalability
+```
+
 # Initialize governor states
 function initialize_gov(gov::GasTG, initial_power::Float64)
     # For steady-state initialization at a given power level
