@@ -85,7 +85,7 @@ function run_simulation(network_file)
     )
     
     shaft = SingleMass(
-        H = 30.0148,
+        H = 3.148,
         D = 2.0,
         system_base_frequency = 60.0
     )
