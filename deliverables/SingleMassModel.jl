@@ -4,9 +4,9 @@ module SingleMassModel
 # Exporting the required functions from this file
 export SingleMass, initialize_shaft, update_shaft_states!
 
-```
-We are modeling the single mass model, so it only has 2 states.
-```
+
+# We are modeling the single mass model, so it only has 2 states.
+
 # Shaft state indices
 const DELTA_IDX = 1
 const OMEGA_IDX = 2
@@ -28,11 +28,11 @@ mutable struct SingleMass
     end
 end
 
-```
-The module has two functions:
-Initializing states, and updating states
-This will help us in scalability
-```
+
+# The module has two functions:
+# Initializing states, and updating states
+# This will help us in scalability
+
 
 # Initialize shaft states
 function initialize_shaft(shaft::SingleMass, initial_angle::Float64)
@@ -62,9 +62,7 @@ function update_shaft_states!(
     # Base frequency
     f0 = shaft.system_base_frequency
     
-    ```
-    Equations 15.5 in Milano's book
-    ```
+    # Equations 15.5 in Milano's book
 
     # Compute derivativesy
     derivatives[DELTA_IDX] = 2.0 * π * f0 * (omega - ω_sys)
