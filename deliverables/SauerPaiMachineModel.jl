@@ -168,7 +168,7 @@ function update_machine_states!(
     # Also 15.13 in Milano's book
     derivatives[ED_P] = (1.0 / machine.Tq0_p) * (
         -ed_p + (machine.Xq - machine.Xq_p) * (
-            i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_d2 * ed_p
+            i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_q2 * ed_p
         )
     )
     
