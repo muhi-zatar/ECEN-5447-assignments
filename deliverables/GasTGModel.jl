@@ -94,7 +94,7 @@ This will help us in scalability
 # Initialize governor states
 function initialize_gov(gov::GasTG, initial_power::Float64)
     # For steady-state initialization at a given power level
-    
+    # TODO: These values are place-holders because I did not know what to include. To be fixed.
     # At steady state
     # xg3 = xg2 = initial_power (assuming no frequency deviation)
     xg3 = initial_power
