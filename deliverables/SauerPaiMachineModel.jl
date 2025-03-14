@@ -51,8 +51,8 @@ mutable struct SauerPaiMachine
     base_power::Float64
     system_base_power::Float64
     system_base_frequency::Float64
-    H::Float64
-    D::Float64
+    H::Float64 # Rearragned for tideness
+    D::Float64 # REarranged for tindeness
 
     # Constructor with default values
     function SauerPaiMachine(;
@@ -80,8 +80,8 @@ mutable struct SauerPaiMachine
     )
         return new(R, Xd, Xq, Xd_p, Xq_p, Xd_pp, Xq_pp, Xl,
             Td0_p, Tq0_p, Td0_pp, Tq0_pp,
-            γ_d1, γ_q1, γ_d2, γ_q2, H, D,
-            base_power, system_base_power, system_base_frequency)
+            γ_d1, γ_q1, γ_d2, γ_q2, base_power, 
+            system_base_power, system_base_frequency, H, D)
     end
 end
 
