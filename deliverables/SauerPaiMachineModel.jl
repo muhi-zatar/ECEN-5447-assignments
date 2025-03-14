@@ -103,7 +103,7 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     power_factor_angle = angle(V_terminal) - angle(I_complex)
 
     # Calculate initial rotor angle
-    δ = angle(V_terminal + complex(machine.R, machine.Xq) * I_complex)             # Eqn. 9.11
+    δ = angle(V_terminal + complex(machine.R, machine.X_q) * I_complex)             # Eqn. 9.11
 
     # Convert terminal voltage to dq frame
     vdq = V_terminal * ℯ^(-1 * im * (δ - π / 2))
@@ -217,14 +217,14 @@ function update_machine_states!(
 
     # flux equations (15.13 in Milano's book)
     derivatives[EQ_P] = (1.0 / machine.Td0_p) * (
-        -eq_p + Vf - (machine.Xd - machine.Xd_p) * (
+        -eq_p + Vf - (machine.X_d - machine.Xd_p) * (
             i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p
         )
     )
 
     # Also 15.13 in Milano's book
     derivatives[ED_P] = (1.0 / machine.Tq0_p) * (
-        -ed_p + (machine.Xq - machine.Xq_p) * (
+        -ed_p + (machine.X_q - machine.Xq_p) * (
             i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_q2 * ed_p
         )
     )
@@ -236,7 +236,7 @@ function update_machine_states!(
     # TODO
     # Calculate grid current
     I_dq = [i_d; i_q]
-    I_RI = (machine.base_power / machine.system_base_power) * dq_ri(delta) * I_dq
+    I_RI = (machine.base_power / machine.system_base_power) * dq_ri(δ) * I_dq
     I_grid = Complex(I_RI[1], I_RI[2])
 
     return τ_m, Vf
