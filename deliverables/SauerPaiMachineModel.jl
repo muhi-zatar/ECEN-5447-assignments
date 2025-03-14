@@ -33,8 +33,8 @@ end
 mutable struct SauerPaiMachine
     # Machine parameters
     R::Float64
-    Xd::Float64
-    Xq::Float64
+    X_d::Float64
+    X_q::Float64
     Xd_p::Float64
     Xq_p::Float64
     Xd_pp::Float64
@@ -57,8 +57,8 @@ mutable struct SauerPaiMachine
     # Constructor with default values
     function SauerPaiMachine(;
         R=0.002,
-        Xd=1.79,
-        Xq=1.71,
+        X_d=1.79,
+        X_q=1.71,
         Xd_p=0.169,
         Xq_p=0.228,
         Xd_pp=0.135,
@@ -68,17 +68,18 @@ mutable struct SauerPaiMachine
         Tq0_p=0.85,
         Td0_pp=0.032,
         Tq0_pp=0.05,
-        γ_d1=(machine.Xd_pp - machine.Xl) / (machine.Xd_p - machine.Xl),
-        γ_q1=(machine.Xq_pp - machine.Xl) / (machine.Xq_p - machine.Xl),
-        γ_d2=(1 - machine.γ_d1) / (machine.Xd_p - machine.Xl),
-        γ_q2=(1 - machine.γ_q1) / (machine.Xq_p - machine.Xl),
+        γ_d1=(Xd_pp - Xl) / (Xd_p - Xl), # Removed "machine" as the object is not yet created.
+        γ_q1=(Xq_pp - Xl) / (Xq_p - Xl), # Removed "machine" as the object is not yet created.
+        γ_d2=(1 - γ_d1) / (Xd_p - Xl), # Removed "machine" as the object is not yet created.
+        γ_q2=(1 - γ_q1) / (Xq_p - Xl), # Removed "machine" as the object is not yet created.
         H=3.148,
         D=2.0,
         base_power=100.0,
         system_base_power=100.0,
         system_base_frequency=60.0
     )
-        return new(R, Xd, Xq, Xd_p, Xq_p, Xd_pp, Xq_pp, Xl,
+
+        return new(R, X_d, X_q, Xd_p, Xq_p, Xd_pp, Xq_pp, Xl,
             Td0_p, Tq0_p, Td0_pp, Tq0_pp,
             γ_d1, γ_q1, γ_d2, γ_q2, base_power, 
             system_base_power, system_base_frequency, H, D)
