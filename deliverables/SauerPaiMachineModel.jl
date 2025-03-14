@@ -110,7 +110,7 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     v_q = imag(vdq)
 
     # Current
-    idq = I_complex * ℯ^(-1 * im * (δ0 - π / 2))
+    idq = I_complex * ℯ^(-1 * im * (δ - π / 2)) # Fixed from δ to δ0
     i_d = real(idq)
     i_q = imag(idq)
 
