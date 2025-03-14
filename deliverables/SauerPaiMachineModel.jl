@@ -195,6 +195,7 @@ function update_machine_states!(
 
     # TODO: Check this process
     # Use electrical torque to find mechanical torque, then we will update electrical torque to return
+    # Checking equation 15.6, this should be fine.
     τ_m = τ_e
     # We need synchronous fluxes to get electrical torque
     ψ_d = machine.R * i_q + v_q
