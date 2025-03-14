@@ -75,20 +75,13 @@ else
     println("DQ current calculation looks good. Difference between calculated and expected apparent power: $(norm(S_test - S,Inf))")
 end
 
-# Define some arbitrary generator reactances
-x1 = 1.0
-x2 = 1.0
-
-# Find load impedance
-Z = (v .^ 2) ./ S
-Z3 = Z[3]       # The load is at the third bus
-
 # Find Lines
 line_1_2 = get_component(Line, sys, "BUS 1-BUS 2-i_1")
 line_1_3 = get_component(Line, sys, "BUS 1-BUS 3-i_1")
 line_2_3 = get_component(Line, sys, "BUS 2-BUS 3-i_1")
 
 # Define parameter vector elements
+# Line properties
 R_12 = get_r(line_1_2)
 X_12 = get_x(line_1_2)
 B_12 = get_b(line_1_2)[1] * 2
@@ -98,19 +91,29 @@ B_13 = get_b(line_1_3)[1] * 2
 R_23 = get_r(line_2_3)
 X_23 = get_x(line_2_3)
 B_23 = get_b(line_2_3)[1] * 2
-i_1_d = i_d[1]
-i_1_q = i_q[1]
-i_2_d = i_d[2]
-i_2_q = i_q[2]
-i_3_d = i_d[3]
-i_3_q = i_q[3]
 
-# Introduce net susceptance variables
+# Lumped susceptance variables
 B_1 = (B_12 / 2) + (B_13 / 2)                       # Shunt susceptance at Bus 1
 B_2 = (B_12 / 2) + (B_23 / 2)                       # Shunt susceptance at Bus 2
 B_3 = (B_13 / 2) + (B_23 / 2)                       # Shunt susceptance at Bus 3
 
+# Infinite Bus impedance (arbitrarily selected)
+z_IB = im * 0.1
+
+# Generator 2 impedance (to be replaced by synchronous machine model)
+z_gen2 = im * 0.1
+
+# Load impedance
+Z_dq = (abs.(V_dq) .^ 2) ./ conj.(S)
+z_load = Z_dq[3]       # The load is at the third bus
+
 # Define state vector elements (Assume steady-state)
+i_1_d = i_d[1]                                      # Bus 1 d-axis injected current
+i_1_q = i_q[1]                                      # Bus 1 q-axis injected current
+i_2_d = i_d[2]                                      # Bus 2 d-axis injected current
+i_2_q = i_q[2]                                      # Bus 2 q-axis injected current
+i_3_d = i_d[3]                                      # Bus 3 d-axis injected current
+i_3_q = i_q[3]                                      # Bus 3 q-axis injected current
 v_1_d = v_d[1]                                      # Bus 1 d-axis terminal voltage             
 v_1_q = v_q[1]                                      # Bus 1 q-axis terminal voltage             
 v_2_d = v_d[2]                                      # Bus 2 d-axis terminal voltage             
@@ -123,6 +126,23 @@ i_b2_d = -1 * B_2 * v_2_q                           # Bus 2 d-axis shunt current
 i_b2_q = B_2 * v_2_d                                # Bus 2 q-axis shunt current
 i_b3_d = -1 * B_3 * v_3_q                           # Bus 3 d-axis shunt current
 i_b3_q = B_3 * v_3_d                                # Bus 3 q-axis shunt current
+
+# Voltage behind reactance
+e_1_d = v_1_d + i_1_d * z_IB
+e_1_q = v_1_q + i_1_q * z_IB
+e_2_d = v_2_d + i_2_d * z_gen2
+e_2_q = v_2_q + i_2_q * z_gen2
+
+# Sanity check on voltages behind reactance
+E1 = e_1_d + im * e_1_q
+if abs(E1) < v[1]
+    throw("Voltage behind reactance is less than terminal voltage at Bus 1! Check currents...")
+end
+
+E2 = e_2_d + im * e_2_q
+if abs(E2) < v[2]
+    throw("Voltage behind reactance is less than terminal voltage at Bus 2! Check currents...")
+end
 
 # Still working on this – using the pseudoinverse for now because the A matrix is singular
 A = [1 1 0; 1 0 -1; 0 1 1]
@@ -155,8 +175,8 @@ end
 
 # Define function to be used by integration method 
 function three_bus_network(du, u, p, t)
-    i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b1_d, i_b1_q, i_b2_d, i_b2_q, i_b3_d, i_b3_q = u
-    R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q = p
+    i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b1_d, i_b1_q, i_b2_d, i_b2_q, i_b3_d, i_b3_q, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q = u
+    R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, z_IB, z_gen2, z_load, e_1_d, e_1_q, e_2_d, e_2_q = p
 
     # Define equations in the same order as the u vector
     # Line currents (differential)
@@ -186,10 +206,22 @@ function three_bus_network(du, u, p, t)
     du[17] = i_3_d + i_23_d + i_13_d - i_b3_d                               # d/dt (i_b3_d) = 0
     du[18] = i_3_q + i_23_q + i_13_q - i_b3_q                               # d/dt (i_b3_q) = 0
 
+    # Current injections (algebraic)
+    # TODO: Consider incorporating these algebraic constraints directly into the 6 above
+    # Bus 1 (Infinite Bus)
+    du[19] = i_1_d - (e_1_d - v_1_d) / z_IB                                 # d/dt (i_1_d) = 0
+    du[20] = i_1_q - (e_1_q - v_1_q) / z_IB                                 # d/dt (i_1_q) = 0
+    # Bus 2 (Our generator – to be replaced by machine model)
+    du[21] = i_2_d - (e_2_d - v_2_d) / z_gen2                               # d/dt (i_2_d) = 0
+    du[22] = i_2_q - (e_2_q - v_2_q) / z_gen2                               # d/dt (i_2_d) = 0
+    # Bus 3 (Load) – Taken from Milano's Eigenvalue Problems book, Eq 1.50
+    # NOTE: With this formulation, we're implicitly assuming steady-state conditions for the load
+    du[23] = v_3_d - real(z_load) * i_3_d + imag(z_load) * i_3_q            # d/dt (i_3_d) = 0
+    du[24] = v_3_q - real(z_load) * i_3_q - imag(z_load) * i_3_d            # d/dt (i_3_q) = 0
 end
 
 # Build the mass matrix
-M_diagonal = [X_12, X_12, X_13, X_13, X_23, X_23, B_1, B_1, B_2, B_2, B_3, B_3, 0, 0, 0, 0, 0, 0]
+M_diagonal = [X_12, X_12, X_13, X_13, X_23, X_23, B_1, B_1, B_2, B_2, B_3, B_3, zeros(12)...]
 M = Diagonal(M_diagonal)  # creates diagonal square matrix from a vector
 
 # Build function 
@@ -200,12 +232,12 @@ tspan = (0.0, 0.2)
 
 # Build initial condition vector
 # Order will be:
-u0 = [i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b1_d, i_b1_q, i_b2_d, i_b2_q, i_b3_d, i_b3_q]
+u0 = [i_12_d, i_12_q, i_13_d, i_13_q, i_23_d, i_23_q, v_1_d, v_1_q, v_2_d, v_2_q, v_3_d, v_3_q, i_b1_d, i_b1_q, i_b2_d, i_b2_q, i_b3_d, i_b3_q, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q]
 
 
 # Build parameter vector
 # Order will be:
-p = [R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, i_1_d, i_1_q, i_2_d, i_2_q, i_3_d, i_3_q]
+p = [R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, z_IB, z_gen2, z_load, e_1_d, e_1_q, e_2_d, e_2_q]
 
 # Check initial condition consistency
 # NOTE: We want this pre-perturbation initial condition to be an equilibrium point
@@ -236,7 +268,7 @@ end
 # Define the perturbation 
 
 function affect!(integrator)
-    integrator.p[999] *= 1.5 ##### TODO: Change 999 to index of the load impedance parameter
+    integrator.p[12] *= 1.5 ##### TODO: Change 999 to index of the load impedance parameter
 end
 
 # Create a Callback function that represents the pertubation 
