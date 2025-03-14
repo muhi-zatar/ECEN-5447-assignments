@@ -126,7 +126,14 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
         (machine.Xq_p - machine.Xl) * i_q;
         (machine.X_d - machine.Xd_p) * i_d]
 
-    (eq_p, ed_p, ψd_pp, ψq_pp, Vf) = A \ b
+    # Tideness and easier tracability
+    solution = A \ b
+    eq_p = solution[1]
+    ed_p = solution[2]
+    ψd_pp = solution[3]
+    ψq_pp = solution[4]
+    Vf = solution[5]
+    # (eq_p, ed_p, ψd_pp, ψq_pp, Vf) = A \ b
 
     # Use Milano Eqn. 15.11 to reconstruct the synchronous fluxes
     ψ_d = machine.R * i_q + v_q
