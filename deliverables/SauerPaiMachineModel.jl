@@ -208,7 +208,7 @@ function update_machine_states!(
     derivatives[DELTA] = 2.0 * π * f0 * (ω - ω_sys)
 
     # Speed derivative
-    derivatives[OMEGA] = 1.0 / (2.0 * shaft.H) * (
+    derivatives[OMEGA] = 1.0 / (2.0 * machine.H) * (
         τ_m - τ_e - (machine.D * (ω - 1.0))
     )
 
