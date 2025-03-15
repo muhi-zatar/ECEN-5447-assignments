@@ -13,8 +13,6 @@ const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
-const TORQUE_E = 7
-const VF = 8
 
 # Helper functions
 # not all of them are used.
@@ -81,7 +79,7 @@ mutable struct SauerPaiMachine
 
         return new(R, X_d, X_q, Xd_p, Xq_p, Xd_pp, Xq_pp, Xl,
             Td0_p, Tq0_p, Td0_pp, Tq0_pp,
-            γ_d1, γ_q1, γ_d2, γ_q2, base_power, 
+            γ_d1, γ_q1, γ_d2, γ_q2, base_power,
             system_base_power, system_base_frequency, H, D)
     end
 end
@@ -94,6 +92,11 @@ This will help us in scalability
 
 # Initialize machine states based on power flow solution
 function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
+    ```
+    This function will initialize the states of the machine at steady-state.
+    It will also initialize the field voltage (to be used by initialize_avr) and the mechanical
+    torque (to be used by initialize_gov)
+    ```
     # Calculate initial values for the six states based on steady-state conditions
     # This is a simplified initialization
 
@@ -143,19 +146,20 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     # Use Milano Eqn. 15.6 to reconstruct the electrical torque
     τ_e = ψ_d * i_q - ψ_q * i_d
 
+    # In steady-state, τ_e = τ_m
+    τ_m = τ_e
+
     # Prepare state vector for return
-    states = zeros(Float64, 8)
+    states = zeros(Float64, 6)
     states[DELTA] = δ
     states[OMEGA] = 1.0
     states[EQ_P] = eq_p
     states[ED_P] = ed_p
     states[PSI_D_PP] = ψd_pp
     states[PSI_Q_PP] = ψq_pp
-    states[TORQUE_E] = τ_e
-    states[VF] = Vf
 
     # Return initial states and field voltage
-    return states
+    return states, Vf, τ_m
 end
 
 # Update machine states 
@@ -163,6 +167,8 @@ function update_machine_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
     V_terminal::Complex{Float64},
+    Vf::Float64,
+    τ_m::Float64,
     machine::SauerPaiMachine
 )
     # Extract machine states
@@ -172,8 +178,6 @@ function update_machine_states!(
     ed_p = states[ED_P]
     ψd_pp = states[PSI_D_PP]
     ψq_pp = states[PSI_Q_PP]
-    τ_e = states[TORQUE_E]
-    Vf = states[VF]
 
     # System base values
     f0 = machine.system_base_frequency
@@ -194,10 +198,6 @@ function update_machine_states!(
     i_d = currents[1]
     i_q = currents[2]
 
-    # TODO: Check this process
-    # Use electrical torque to find mechanical torque, then we will update electrical torque to return
-    # Checking equation 15.6, this should be fine.
-    τ_m = τ_e
     # We need synchronous fluxes to get electrical torque
     ψ_d = machine.R * i_q + v_q
     ψ_q = -1 * (machine.R * i_d + v_d)
@@ -239,6 +239,11 @@ function update_machine_states!(
     I_RI = (machine.base_power / machine.system_base_power) * dq_ri(δ) * I_dq
     I_grid = Complex(I_RI[1], I_RI[2])
 
-    return τ_m, Vf
+    # TODO: Convert machine DQ reference frame back to network to be good friends
+    I_network_dq = [0.0; 0.0]
+    V_network_dq = [0.0; 0.0]
+
+    # TODO: After incorporating network model, return network V,I instead of machine V,I
+    return V_dq, I_dq
 end
 end # module 
