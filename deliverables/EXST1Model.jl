@@ -5,9 +5,9 @@ module EXST1Model
 export EXST1, initialize_avr, update_avr_states!
 
 # AVR state indices
-const VM_IDX = 1
-const VRLL_IDX = 2
-const VR_IDX = 3
+const VF_IDX = 1
+const VT_IDX = 2
+const VLL_IDX = 3
 const VFB_IDX = 4
 
 # EXST1 Automatic Voltage Regulator model structure
@@ -27,22 +27,22 @@ mutable struct EXST1
     Kf::Float64      # Rate feedback gain
     Tf::Float64      # Rate feedback time constant
     V_ref::Float64   # Reference voltage
-    
+
     # Constructor with given values in the project description
     function EXST1(;
-        Tr = 0.01,
-        Vi_min = -5.0,
-        Vi_max = 5.0,
-        Tc = 10.0,
-        Tb = 20.0,
-        Ka = 200.0,
-        Ta = 0.1,
-        Vr_min = 0,
-        Vr_max = 6,
-        Kc = 0.0,
-        Kf = 0.0,
-        Tf = 0.1,
-        V_ref = 1.0
+        Tr=0.01,
+        Vi_min=-5.0,
+        Vi_max=5.0,
+        Tc=10.0,
+        Tb=20.0,
+        Ka=200.0,
+        Ta=0.1,
+        Vr_min=0,
+        Vr_max=6,
+        Kc=0.0,
+        Kf=0.0,
+        Tf=0.1,
+        V_ref=1.0
     )
         return new(Tr, Vi_min, Vi_max, Tc, Tb, Ka, Ta, Vr_min, Vr_max, Kc, Kf, Tf, V_ref)
     end
@@ -96,24 +96,26 @@ Initializing states, and updating states
 This will help us in scalability
 ```
 
+```
+This function will initialize the AVR states based on the steady-state terminal voltage and the
+steady-state field voltage (as calculated by initialize_machine)
+```
 # Initialize AVR states
-function initialize_avr(avr::EXST1, V_terminal_magnitude, Xad_Ifd = 0.0)
-    # For steady-state initialization, we assume all states are at equilibrium (correct, right?)
-    Vm = V_terminal_magnitude
-    
-    # At steady state, Vfb would be zero (output of high-pass filter)
-    # TODO: Check this
-    Vfb = 0.0
-    
-    # Calculate Vr at steady state - this would be the field voltage
-    # adjusted by system constraints
-    Vr = avr.V_ref
-    
-    # Vrll is the output of the lead/lag block
-    Vrll = Vr / avr.Ka
-    
-    # Return initial states
-    return [Vm, Vrll, Vr, Vfb]
+function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
+
+    # Define empty states vector to populate
+    states = zeros(Float64, 4)
+
+    # Extract AVR states
+    states[VF_IDX] = V_f_init
+    states[VT_IDX] = V_terminal_magnitude
+    states[VLL_IDX] = V_f_init / avr.Ka
+    states[VFB_IDX] = 0
+
+    # Calculate Vs (assuming this is a parameter here, since there is not a PSS in the system)
+    Vs = V_f_init / avr.Ka
+
+    return states, Vs
 end
 
 # Update AVR states
@@ -121,47 +123,38 @@ function update_avr_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
     V_terminal_magnitude::Float64,
-    Vss::Float64,  # PSS output (NOT REQUIRED, SO WILL BE SET TO ZERO)
-    Ifd::Float64,  # Field current
     avr::EXST1
 )
     # Extract AVR states
-    Vm = states[VM_IDX]
-    Vrll = states[VRLL_IDX]
-    Vr = states[VR_IDX]
+    Vf = states[VF_IDX]
+    Vt = states[VT_IDX]
+    Vll = states[VLL_IDX]
     Vfb = states[VFB_IDX]
-    
-    # Reference voltage with PSS correction (but we dont have PSS) uncomment when we need PSS
-    # V_ref = avr.V_ref + Vss
 
     # Without PSS
     V_ref = avr.V_ref
 
-    
+
     # Calculate block outputs and derivatives
     _, dVm_dt = low_pass_mass_matrix(V_terminal_magnitude, Vm, 1.0, avr.Tr)
-    
+
     # High pass filter for feedback
     y_hp, dVfb_dt = high_pass(Vr, Vfb, avr.Kf, avr.Tf)
-    
+
     # Lead-lag compensator
     compensator_input = clamp(avr.V_ref - Vm - y_hp, avr.Vi_min, avr.Vi_max)
     y_ll, dVrll_dt = lead_lag_mass_matrix(compensator_input, Vrll, 1.0, avr.Tc, avr.Tb)
-    
+
     # Amplifier block
     _, dVr_dt = low_pass_mass_matrix(y_ll, Vr, avr.Ka, avr.Ta)
-    
+
     # Update derivatives
     derivatives[VM_IDX] = dVm_dt
     derivatives[VRLL_IDX] = dVrll_dt
     derivatives[VR_IDX] = dVr_dt
     derivatives[VFB_IDX] = dVfb_dt
-    
-    # Calculate field voltage with rectifier loading adjustment
-    Vf = clamp(Vr, V_terminal_magnitude * avr.Vr_min - avr.Kc * Ifd, 
-                   V_terminal_magnitude * avr.Vr_max - avr.Kc * Ifd)
-    
-    return Vf
+
+    return
 end
 
 end # module
