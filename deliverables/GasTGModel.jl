@@ -116,15 +116,15 @@ function update_gov_states!(
     gov::GasTG
 )
     # Extract governor states
-    fv = states[XG1_IDX]
-    ff = states[XG2_IDX]
-    et = states[XG3_IDX]
+    fv = states[FV_IDX]
+    ff = states[FF_IDX]
+    et = states[ET_IDX]
 
     # Calculate inverse droop (avoid division by zero) for numerical imstabilities faced when running the simulation
     inv_R = gov.R < eps() ? 0.0 : 1.0 / gov.R
 
     # Printing this value to make sure it is feasile
-    println(inv_R)
+    #println(inv_R)
 
     # Speed governor input calculation
     # TODO: replace 1.0 with \omega ref if needed.
@@ -133,7 +133,7 @@ function update_gov_states!(
     speed_governing = inv_R * speed_error
 
     # Temperature control limiter
-    temperature_limit = gov.AT + gov.KT * (gov.AT - xg3)
+    temperature_limit = gov.AT + gov.KT * (gov.AT - et)
 
     # Take minimum of power reference and temperature limit (LV logic gate)
     governor_input = min(reference_power - speed_governing, temperature_limit)
@@ -145,9 +145,9 @@ function update_gov_states!(
     det_dt = low_pass(fv, et, 1.0, gov.T3)
 
     # Update derivatives
-    derivatives[XG1_IDX] = dff_dt
-    derivatives[XG2_IDX] = dfv_dt
-    derivatives[XG3_IDX] = det_dt
+    derivatives[FV_IDX] = dfv_dt
+    derivatives[FF_IDX] = dff_dt
+    derivatives[ET_IDX] = det_dt
 
     # Calculate mechanical power output
     # TODO: Check this since D_turb is 0.0

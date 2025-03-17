@@ -190,6 +190,7 @@ function update_machine_states!(
     # Terminal voltage in dq reference frame
     v_d = v_mag * sin(δ - θ)       # Eqn 15.4
     v_q = v_mag * cos(δ - θ)       # Eqn 15.4
+    V_dq = complex(v_d, v_q)
 
     # Calculate currents (Use 15.11 and 15.15 to eliminate ψq and ψd, solve for Id and Iq)
     A = [machine.Xd_pp machine.R; machine.R -machine.Xq_pp]
@@ -233,17 +234,14 @@ function update_machine_states!(
     derivatives[PSI_D_PP] = (1.0 / machine.Td0_pp) * (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
     derivatives[PSI_Q_PP] = (1.0 / machine.Tq0_pp) * (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
 
-    # TODO
-    # Calculate grid current
-    I_dq = [i_d; i_q]
-    I_RI = (machine.base_power / machine.system_base_power) * dq_ri(δ) * I_dq
-    I_grid = Complex(I_RI[1], I_RI[2])
+    # Calculate power at the bus
+    p_bus = v_d * i_d + v_q * i_q
+    q_bus = v_q * i_d - v_d * i_q
+    S_bus = complex(p_bus, q_bus)
 
-    # TODO: Convert machine DQ reference frame back to network to be good friends
-    I_network_dq = [0.0; 0.0]
-    V_network_dq = [0.0; 0.0]
+    # Calculate current in positive sequence
+    I_RI = conj(S_bus / V_terminal)
 
-    # TODO: After incorporating network model, return network V,I instead of machine V,I
-    return V_dq, I_dq
+    return abs(V_dq), I_RI, angle(S_bus), ω
 end
 end # module 

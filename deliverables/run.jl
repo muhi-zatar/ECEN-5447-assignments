@@ -2,8 +2,8 @@
 cd(@__DIR__)
 using Pkg
 Pkg.activate("../.")
-Pkg.resolve()
-Pkg.instantiate()
+#Pkg.resolve()
+#Pkg.instantiate()
 
 # Importing the required librarires
 using DifferentialEquations
@@ -92,9 +92,9 @@ function run_simulation(network_file)
     )
 
     # Initialize states
-    network_states, i_2_d_init, i_2_q_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
+    network_states, i_2_r_init, i_2_i_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
-    avr_states, Vs = initialize_avr(avr, V_mag, Vf_init)  # Assume zero field current initially, is that right?
+    avr_states = initialize_avr(avr, V_mag, Vf_init)  # Assume zero field current initially, is that right?
     ω_init = 1.0
     governor_states = initialize_gov(governor, τ_m_init, ω_init)
 
@@ -127,13 +127,14 @@ function run_simulation(network_file)
 
     # Define global variables for intermediate values
     # These are needed because we can't modify p during integration
-    Vf_global = Ref(Vf_init)
-    τm_global = Ref(P)
-    V_terminal_magnitude_global = Ref(V_mag)
-    V_terminal_global = Ref(V_terminal)
-    ω_global = Ref(1.0)
-    i_2_d_global = Ref(i_2_d_init)                    # Current injection at Bus 2 (network D-axis)
-    i_2_q_global = Ref(i_2_q_init)                    # Current injection at Bus 2 (network Q-axis)
+    Vf_global = Vf_init
+    τm_global = P
+    V_terminal_magnitude_global = V_mag
+    V_terminal_global = V_terminal
+    θ_global = V_angle
+    ω_global = 1.0
+    i_2_r_global = i_2_r_init                    # Current injection at Bus 2 (network D-axis)
+    i_2_i_global = i_2_i_init                    # Current injection at Bus 2 (network Q-axis)
 
     # Function to apply perturbation
     # function apply_perturbation!(vars, t, params)
@@ -145,8 +146,15 @@ function run_simulation(network_file)
     #     return false
     # end
 
+    # Step 2.5: Define Mass Matrix for the system
+    M_system = zeros(Float64, 35)
+    M_system[network_idx] = network.M
+    M_system[machine_idx] = ones(6)
+    M_system[avr_idx] = ones(4)
+    M_system[gov_idx] = ones(3)
+
     # ODE function
-    function ode_system!(du, u, p, t)
+    function ode_system!(du, u, p, t, mass_matrix=M_system)
         # Extract states for each component
         network_states = u[p.network_idx]
         machine_states = u[p.machine_idx]
@@ -177,31 +185,32 @@ function run_simulation(network_file)
         du_gov = zeros(Float64, length(p.gov_idx))
 
         # Update the states of each component
-        update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_global, avr)
+        Vf_avr = update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_global, avr)
 
         # Update global field voltage
-        Vf_global[] = avr_states_f64[1]
+        Vf_global = Vf_avr
 
         τ_m = update_gov_states!(gov_states_f64, du_gov, ω_global, governor)
 
         # Update global mechanical torque
-        τm_global[] = τ_m
+        τm_global = τ_m
 
-        V_dq, I_dq = update_machine_states!(machine_states_f64, du_machine, V_terminal_global, Vf_global, τm_global, machine)
+        V_mag_bus, I_RI, θ_bus, ω_machine = update_machine_states!(machine_states_f64, du_machine, V_terminal_global, Vf_global, τm_global, machine)
 
-        # Update global bus 2 current injection
-        i_2_d_global[] = I_dq[1]
-        i_2_q_global[] = I_dq[2]
+        θ_global = θ_bus
 
-        update_network_states!(network_states_f64, du_network, i_2_d_global, i_2_q_global, network)
+        i_2_r_global = real(I_RI)
+        i_2_i_global = imag(I_RI)
+
+        V_terminal_network = update_network_states!(network_states_f64, du_network, i_2_r_global, i_2_i_global, θ_global, network)
 
         # Update global terminal voltage and rotor speed
-        ω_global[] = ω
-        V_terminal_magnitude_global[] = abs(V_dq)             # Bus 2 terminal voltage magnitude
+        ω_global = ω_machine
+        V_terminal_magnitude_global = V_mag_bus             # Bus 2 terminal voltage magnitude
         # TODO: Need to make the proper conversion from complex terminal voltage in the network DQ 
         # frame to the positive sequence domain.
         # Alternatively, change update_machine_states! to only use V_dq (I'm leaning towards this)
-        V_terminal_global[] = 0.0                             # Bus 2 terminal voltage (positive sequence phasor)
+        V_terminal_global = V_terminal_network                             # Bus 2 terminal voltage (positive sequence phasor)
 
 
         # Copy derivatives to output
@@ -212,50 +221,53 @@ function run_simulation(network_file)
 
         # For debugging printing some results,
         if abs(t - round(t)) < 0.0001
-            println("t=$t: delta=$delta, omega=$omega, τe=$τe, τm=$τm, Vf=$Vf, V_mag=$(system_vars.V_terminal_magnitude)")
+            #println("t=$t: delta=$delta, omega=$omega, τe=$τe, τm=$τm, Vf=$Vf, V_mag=$(system_vars.V_terminal_magnitude)")
+            println("t=$t: omega=$ω_global, τm=$τm_global, Vf=$Vf_global, V_mag=$V_terminal_magnitude_global")
         end
     end
 
     # Step 4: Set up and solve the ODE system
-    tspan = (0.0, 20.0)
+    tspan = (0.0, 5.0)
     prob = ODEProblem(ode_system!, states, tspan, p)
 
     # Using Euler or other simple explicit method that doesn't use automatic differentiation
     # Facing an error with autmatic differentiation
     # TODO: check why
-    sol = solve(prob, BS3(), dt=0.00005, adaptive=false, saveat=0.01)
+    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01)
 
     # Process results
     t = sol.t
-    voltage_magnitudes = fill(NaN, length(t))
+    #voltage_magnitudes = fill(NaN, length(t))
 
-    for (i, ti) in enumerate(t)
-        # Calculate voltage at each saved time point
-        if ti >= perturbation_params.start_time && ti <= perturbation_params.end_time
-            voltage_magnitudes[i] = V_mag * perturbation_params.fault_factor
-        else
-            voltage_magnitudes[i] = V_mag
-        end
-    end
+    # for (i, ti) in enumerate(t)
+    #     # Calculate voltage at each saved time point
+    #     if ti >= perturbation_params.start_time && ti <= perturbation_params.end_time
+    #         voltage_magnitudes[i] = V_mag * perturbation_params.fault_factor
+    #     else
+    #         voltage_magnitudes[i] = V_mag
+    #     end
+    # end
 
     # Create plots - Just as an example, 90% of them are not needed
-    p1 = plot(t, [sol[shaft_idx[1], i] for i in 1:length(t)], label="Rotor Angle (rad)", title="Rotor Dynamics")
-    p2 = plot(t, [sol[shaft_idx[2], i] for i in 1:length(t)], label="Rotor Speed (pu)", title="Speed")
-    p3 = plot(t, [sol[machine_idx[3], i] for i in 1:length(t)], label="eq'", title="Machine Fluxes")
-    plot!(p3, t, [sol[machine_idx[4], i] for i in 1:length(t)], label="ed'")
-    p4 = plot(t, [sol[avr_idx[3], i] for i in 1:length(t)], label="Regulator Output", title="AVR")
-    p5 = plot(t, [sol[gov_idx[2], i] for i in 1:length(t)], label="Mechanical Power", title="Governor")
-    p6 = plot(t, voltage_magnitudes, label="Terminal Voltage (pu)", title="Voltage", linewidth=2)
+    p1 = plot(t, [sol[machine_idx[3], i] for i in 1:length(t)], label="eq'", title="Machine Fluxes")
+    plot!(p1, t, [sol[machine_idx[4], i] for i in 1:length(t)], label="ed'")
+    savefig(p1, "fluxes.png")
+    p2 = plot(t, [sol[avr_idx[1], i] for i in 1:length(t)], label="Field Voltage", title="AVR")
+    savefig(p2, "vf.png")
+    #p3 = plot(t, [sol[gov_idx[2], i] for i in 1:length(t)], label="Mechanical Power", title="Governor")
+    p3 = plot(t, [sol[network_idx[9], i] for i in 1:length(t)], title="Terminal Voltage (Machine DQ)", label="Vd", linewidth=2)
+    plot!(p3, t, [sol[network_idx[10], i] for i in 1:length(t)], label="Vq", linewidth=2)
+    savefig(p3, "vt.png")
 
     # Combine plots
-    combined_plot = plot(p1, p2, p3, p4, p5, p6, layout=(6, 1), size=(800, 1200))
-    display(combined_plot)
-    savefig(combined_plot, "haha.png")
+    #combined_plot = plot(p1, p2, p3, layout=(3, 1), size=(800, 1200))
+    #display(combined_plot)
+    #savefig(combined_plot, "haha.png")
 
     return sol
 end
 
 # Run the simulation
-sol = run_simulation("../data/ThreeBusNetwork.raw")  # Adjust the path to your network file
+sol = run_simulation("../data/ThreeBusMultiLoad.raw")  # Adjust the path to your network file
 
 println("Simulation complete!")

@@ -119,10 +119,7 @@ function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
     states[VLL_IDX] = V_f_init / avr.Ka
     states[VFB_IDX] = 0
 
-    # Calculate Vs (assuming this is a parameter here, since there is not a PSS in the system)
-    Vs = V_f_init / avr.Ka
-
-    return states, Vs
+    return states
 end
 
 # Update AVR states
@@ -147,7 +144,7 @@ function update_avr_states!(
     output_hp, dVfb_dt = high_pass(Vt, Vfb, avr.Kf, avr.Tf)
 
     compensator_input = V_err + avr.V_ss - Vfb
-    _, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
+    y_ll, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
 
     dVt_dt = low_pass_mass_matrix(y_ll, Vt, avr.Ka, avr.Ta)
 
@@ -157,7 +154,7 @@ function update_avr_states!(
     derivatives[VLL_IDX] = dVll_dt
     derivatives[VFB_IDX] = dVfb_dt
 
-    return
+    return Vf
 end
 
 end # module

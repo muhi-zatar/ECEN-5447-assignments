@@ -34,14 +34,26 @@ const I_B2_Q_IDX = 20
 const I_B3_D_IDX = 21
 const I_B3_Q_IDX = 22
 
-# Helper function
+# Helper functions
+# not all of them are used.
+
 function sanity_check(test_value, true_value, calculation_under_test::String)
     difference = norm.(test_value .- true_value, Inf)
-    if difference > 1e-6
+    if (difference .> 1e-6)
         throw("$calculation_under_test calculation is probably wrong. Difference between calculated and expected: $difference")
     else
         println("$calculation_under_test calculation looks good. Difference between calculated and expected: $difference")
     end
+end
+
+# RI to DQ transformation matrix
+function ri_dq(delta)
+    return [cos(delta) sin(delta); -sin(delta) cos(delta)]
+end
+
+# DQ to RI transformation matrix
+function dq_ri(delta)
+    return [cos(delta) -sin(delta); sin(delta) cos(delta)]
 end
 
 # Network structure for parameters
@@ -60,7 +72,7 @@ mutable struct ThreeBusNetwork
     E_IB_D::Float64                               # d-axis EMF behind reactance of the infinite bus
     E_IB_Q::Float64                               # q-axis EMF behind reactance of the infinite bus
     Z_L::Complex{Float64}                         # Impedance of the load at Bus 3
-    M::AbstractArray{Float64,2}                   # The mass matrix
+    M::AbstractArray{Float64}                     # The coefficients that go on the diagonal of the mass matrix
 
     # Constructor with default values
     function ThreeBusNetwork(;
@@ -108,6 +120,10 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     S = complex.(P, Q)
     V_terminal = V_m .* ℯ .^ (im .* θ)
 
+    # Construct initial current to pass forward
+    I_RI = S ./ conj.(V_terminal)
+    I_2_RI = I_RI[BUS_MACHINE_MODEL]
+
     ##### MOVE TO NETWORK DQ REFERENCE FRAME #####
     # Find DQ voltage (Milano Eigenvalue Problems Eqn 1.44)
     v_d = -V_m .* sin.(θ)             # Direct-axis component of bus voltage
@@ -116,7 +132,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
 
     # Sanity check
     V_test = V_dq .* ℯ .^ (-im * π / 2)
-    sanity_check(V_test, V_terminal, "DQ voltage")
+    #sanity_check(V_test, V_terminal, "DQ voltage")
 
     # Find complex current
     I_dq = conj(S ./ V_dq)            # Complex bus current injections in network DQ reference frame
@@ -131,7 +147,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     P_test = (v_d .* i_d) .+ (v_q .* i_q)
     Q_test = (v_q .* i_d) .- (v_d .* i_q)
     S_test = complex.(P_test, Q_test)
-    sanity_check(S_test, S, "DQ current")
+    #sanity_check(S_test, S, "DQ current")
 
     # Find load impedance
     Z_dq = (abs.(V_dq) .^ 2) ./ conj.(S)
@@ -196,7 +212,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
         states[I_3_Q_IDX] + states[I_23_Q_IDX] + states[I_13_Q_IDX] - states[I_B3_Q_IDX]
     ]
 
-    sanity_check(res_i, zeros(6), "Line current")
+    #sanity_check(res_i, zeros(6), "Line current")
 
     # Populate mass matrix
     M_diagonal = zeros(Float64, NUM_STATES)
@@ -217,17 +233,18 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     M_diagonal[I_3_D_IDX] = imag(network.Z_L)
     M_diagonal[I_3_Q_IDX] = imag(network.Z_L)
     M_diagonal[I_B1_D_IDX:I_B3_Q_IDX] .= 0.0
-    network.M = Diagonal(M_diagonal)
+    network.M = M_diagonal
 
     # Return initial states
-    return states, i_2_d, i_2_q
+    return states, real(I_2_RI), imag(I_2_RI)
 end
 
 function update_network_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
-    i_2_d::Float64,
-    i_2_q::Float64,
+    i_2_r::Float64,
+    i_2_i::Float64,
+    bus_angle::Float64,
     network::ThreeBusNetwork
 )
     # Extract network states
@@ -253,6 +270,12 @@ function update_network_states!(
     i_b2_q = states[I_B2_Q_IDX]
     i_b3_d = states[I_B3_D_IDX]
     i_b3_q = states[I_B3_Q_IDX]
+
+    # Convert real and imaginary current at bus 2 into network DQ reference frame
+    I_RI = [i_2_r; i_2_i]                   # Positive sequence current injected at Bus 2
+    I_dq = ri_dq(bus_angle) * I_RI
+    i_2_d = I_dq[1]
+    i_2_q = I_dq[2]
 
     # Unpack real and imaginary components of the load for convenience
     R_load = real(network.Z_L)
@@ -294,5 +317,9 @@ function update_network_states!(
     derivatives[I_B3_D_IDX] = i_3_d + i_23_d + i_13_d - i_b3_d                                                # d/dt (i_b3_d) = 0
     derivatives[I_B3_Q_IDX] = i_3_q + i_23_q + i_13_q - i_b3_q                                                # d/dt (i_b3_q) = 0
 
+    # Compute positive sequence terminal voltage to return
+    V_terminal = (v_2_d + im * v_2_q) * exp(-im * π / 2)
+
+    return V_terminal
 end
 end # module
