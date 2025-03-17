@@ -151,7 +151,8 @@ function update_avr_states!(
     derivatives[VLL_IDX] = dVll_dt
     derivatives[VFB_IDX] = dVfb_dt
 
-    return
+    # Check with Rob if needed to return
+    return derivatives[VF_IDX]
 end
 
 end # module
