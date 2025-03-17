@@ -98,7 +98,7 @@ This will help us in scalability
 
 ```
 This function will initialize the AVR states based on the steady-state terminal voltage and the
-steady-state field voltage (as calculated by initialize_machine)
+steady-state field voltage, as calculated by initialize_machine.
 ```
 # Initialize AVR states
 function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
