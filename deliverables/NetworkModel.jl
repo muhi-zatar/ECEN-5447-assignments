@@ -7,7 +7,9 @@ export ThreeBusNetwork, initialize_network, update_network_states!, BUS_MACHINE_
 using LinearAlgebra
 
 # Definining some constants
+const BUS_INFINITE_BUS = 1
 const BUS_MACHINE_MODEL = 2
+const BUS_LOAD = 3
 const NUM_STATES = 22
 const I_12_D_IDX = 1
 const I_12_Q_IDX = 2
@@ -133,7 +135,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
 
     # Find load impedance
     Z_dq = (abs.(V_dq) .^ 2) ./ conj.(S)
-    network.Z_L = Z_dq[3]             # The load is at the third bus
+    network.Z_L = Z_dq[BUS_LOAD]             # The load is at the third bus
 
     # Define state vector elements (Assume steady-state)
     states[I_1_D_IDX] = i_d[1]                                      # Bus 1 d-axis injected current
@@ -154,12 +156,12 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     states[I_B3_Q_IDX] = network.B_3 * v_d[3]                       # Bus 3 q-axis shunt current
 
     # Voltage behind reactance
-    network.E_IB_D = v_d[1] - i_q[1] * network.X_IB
-    network.E_IB_Q = v_q[1] + i_d[1] * network.X_IB
+    network.E_IB_D = v_d[BUS_INFINITE_BUS] - i_q[BUS_INFINITE_BUS] * network.X_IB
+    network.E_IB_Q = v_q[BUS_INFINITE_BUS] + i_d[BUS_INFINITE_BUS] * network.X_IB
 
     # Sanity check on voltages behind reactance
     E1 = complex(network.E_IB_D, network.E_IB_Q)
-    if abs(E1) < V_m[1]
+    if abs(E1) < V_m[BUS_INFINITE_BUS]
         throw("Voltage behind reactance is less than terminal voltage at Bus 1! Check currents...")
     end
 
