@@ -92,10 +92,10 @@ end
 
 # Initialize governor states
 function initialize_gov(gov::GasTG, τ_m_init::Float64, ω_init::Float64)
-    
+
     # This function will initialize the governor states based on the steady-state rotor angular
     # velocity and the steady-state mechanical torque (both calculated by initialize_machine)
-    
+
     # Extract governor states
     states = zeros(Float64, 3)
 
