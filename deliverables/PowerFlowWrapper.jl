@@ -39,7 +39,7 @@ function get_powerflow_results(network_description)
     P = pf_result["bus_results"].P_net / PSY.get_base_power(sys)
     Q = pf_result["bus_results"].Q_net / PSY.get_base_power(sys)
 
-    # Return values for Bus 2 (where we are placing our model :D)
-    return (v[2], θ[2], P[2], Q[2])
+    # Return vectors of values
+    return (v, θ, P, Q)
 end
 end # module

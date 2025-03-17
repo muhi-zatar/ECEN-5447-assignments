@@ -11,6 +11,7 @@ using Plots
 using LinearAlgebra
 
 # Import our custom modules from other files
+include("NetworkModel.jl")
 include("SauerPaiMachineModel.jl")
 include("EXST1Model.jl")
 include("GasTGModel.jl")
@@ -18,6 +19,7 @@ include("SingleMassModel.jl")
 include("PowerFlowWrapper.jl")
 
 # Use our modules
+using .NetworkModel
 using .SauerPaiMachineModel
 using .EXST1Model
 using .GasTGModel
@@ -44,9 +46,11 @@ end
 
 # Define parameters for ODE solver
 struct ODEParams
+    network::ThreeBusNetwork
     machine::SauerPaiMachine
     avr::EXST1
     governor::GasTG
+    network_idx::UnitRange{Int64}
     machine_idx::UnitRange{Int64}
     avr_idx::UnitRange{Int64}
     gov_idx::UnitRange{Int64}
@@ -54,8 +58,14 @@ end
 
 # Main function to run the simulation
 function run_simulation(network_file)
-    # Step 1: Get initial conditions from power flow
-    V_mag, V_angle, P, Q = get_powerflow_results(network_file)
+    # Step 1: Get initial conditions from power flow (all buses)
+    V_sol, θ_sol, P_sol, Q_sol = get_powerflow_results(network_file)
+
+    # Select bus for our model :D
+    V_mag = V_sol[2]
+    V_angle = θ_sol[2]
+    P = P_sol[2]
+    Q = Q_sol[2]
 
     # Convert voltage to complex form
     V_terminal = V_mag * exp(im * V_angle)
@@ -65,6 +75,8 @@ function run_simulation(network_file)
 
     # Step 2: Initialize models
     # Create model instances
+    network = ThreeBusNetwork()
+
     machine = SauerPaiMachine(
         base_power=100.0,
         system_base_power=100.0,
@@ -80,13 +92,14 @@ function run_simulation(network_file)
     )
 
     # Initialize states
+    network_states, i_2_d_init, i_2_q_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
     avr_states, Vs = initialize_avr(avr, V_mag, Vf_init)  # Assume zero field current initially, is that right?
     ω_init = 1.0
     governor_states = initialize_gov(governor, τ_m_init, ω_init)
 
     # Combine all states into a single vector for ODE solver
-    states = vcat(machine_states, avr_states, governor_states)
+    states = vcat(network_states, machine_states, avr_states, governor_states)
 
     # Print initial states for debugging
     println("\nInitial States:")
@@ -95,15 +108,18 @@ function run_simulation(network_file)
     println("Governor states: $governor_states")
 
     # Define state indices for easier access
-    machine_idx = 1:6
-    avr_idx = 7:10
-    gov_idx = 11:13
+    network_idx = 1:22
+    machine_idx = 23:28
+    avr_idx = 29:32
+    gov_idx = 33:35
 
     # Create ODE parameters structure
     p = ODEParams(
+        network,
         machine,
         avr,
         governor,
+        network_idx,
         machine_idx,
         avr_idx,
         gov_idx,
@@ -116,6 +132,8 @@ function run_simulation(network_file)
     V_terminal_magnitude_global = Ref(V_mag)
     V_terminal_global = Ref(V_terminal)
     ω_global = Ref(1.0)
+    i_2_d_global = Ref(i_2_d_init)                    # Current injection at Bus 2 (network D-axis)
+    i_2_q_global = Ref(i_2_q_init)                    # Current injection at Bus 2 (network Q-axis)
 
     # Function to apply perturbation
     # function apply_perturbation!(vars, t, params)
@@ -130,11 +148,13 @@ function run_simulation(network_file)
     # ODE function
     function ode_system!(du, u, p, t)
         # Extract states for each component
+        network_states = u[p.network_idx]
         machine_states = u[p.machine_idx]
         avr_states = u[p.avr_idx]
         gov_states = u[p.gov_idx]
 
         # Extract parameters
+        network = p.network
         machine = p.machine
         avr = p.avr
         governor = p.governor
@@ -145,40 +165,47 @@ function run_simulation(network_file)
         # end
 
         # Make copies of states for Float64 compatibility if needed
+        network_states_f64 = convert.(Float64, network_states)
         machine_states_f64 = convert.(Float64, machine_states)
         avr_states_f64 = convert.(Float64, avr_states)
         gov_states_f64 = convert.(Float64, gov_states)
 
         # Arrays for derivatives
+        du_network = zeros(Float64, length(p.network_idx))
         du_machine = zeros(Float64, length(p.machine_idx))
         du_avr = zeros(Float64, length(p.avr_idx))
         du_gov = zeros(Float64, length(p.gov_idx))
 
-        #### TODO: RESTRUCTURE TO UPDATE AVR, THEN GOVERNOR, THEN MACHINE
-        # V_terminal_magnitude will need to come from the network model – we'll have to use the 
-        # last-updated value from that.
-        # For now, this we'll treat it as an algebraic state as a placeholder until we add in the 
-        # network model
+        # Update the states of each component
         update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_global, avr)
 
         # Update global field voltage
         Vf_global[] = avr_states_f64[1]
 
-        τ_m = update_gov_states!(gov_states_f64, du_gov, omega_global, governor)
+        τ_m = update_gov_states!(gov_states_f64, du_gov, ω_global, governor)
 
         # Update global mechanical torque
         τm_global[] = τ_m
 
         V_dq, I_dq = update_machine_states!(machine_states_f64, du_machine, V_terminal_global, Vf_global, τm_global, machine)
 
+        # Update global bus 2 current injection
+        i_2_d_global[] = I_dq[1]
+        i_2_q_global[] = I_dq[2]
+
+        update_network_states!(network_states_f64, du_network, i_2_d_global, i_2_q_global, network)
+
         # Update global terminal voltage and rotor speed
         ω_global[] = ω
-        # TODO: UPDATE THIS
-        V_terminal_magnitude_global[] = 0.0
-        V_terminal_global[] = 0.0
+        V_terminal_magnitude_global[] = abs(V_dq)             # Bus 2 terminal voltage magnitude
+        # TODO: Need to make the proper conversion from complex terminal voltage in the network DQ 
+        # frame to the positive sequence domain.
+        # Alternatively, change update_machine_states! to only use V_dq (I'm leaning towards this)
+        V_terminal_global[] = 0.0                             # Bus 2 terminal voltage (positive sequence phasor)
 
 
         # Copy derivatives to output
+        du[p.network_idx] .= du_network
         du[p.machine_idx] .= du_machine
         du[p.avr_idx] .= du_avr
         du[p.gov_idx] .= du_gov
