@@ -27,6 +27,7 @@ mutable struct EXST1
     Kf::Float64      # Rate feedback gain
     Tf::Float64      # Rate feedback time constant
     V_ref::Float64   # Reference voltage
+    V_ss::Float64     # Stabilizer Output
 
     # Constructor with given values in the project description
     function EXST1(;
@@ -42,7 +43,8 @@ mutable struct EXST1
         Kc=0.0,
         Kf=0.0,
         Tf=0.1,
-        V_ref=1.0
+        V_ref=1.0,
+        V_ss=0.0
     )
         return new(Tr, Vi_min, Vi_max, Tc, Tb, Ka, Ta, Vr_min, Vr_max, Kc, Kf, Tf, V_ref)
     end
@@ -59,7 +61,7 @@ function low_pass_mass_matrix(input, state, gain, time_constant)
     # Taken literally from the diagram of powerworld
     if time_constant > 0.0
         derivative = (gain * input - state) / time_constant
-        return state, derivative
+        return derivative
     else
         # If time constant is zero, output = gain * input (algebraic)
         return gain * input, 0.0
@@ -90,18 +92,23 @@ function lead_lag_mass_matrix(input, state, gain, t_numerator, t_denominator)
 end
 # END OF HELPER FUNCTIONS
 
-```
-The module has two functions:
-Initializing states, and updating states
-This will help us in scalability
-```
 
-```
-This function will initialize the AVR states based on the steady-state terminal voltage and the
-steady-state field voltage, as calculated by initialize_machine.
-```
+# The module has two functions:
+# Initializing states, and updating states
+# This will help us in scalability
+
+
+# This function will initialize the AVR states based on the steady-state terminal voltage and the
+# steady-state field voltage (as calculated by initialize_machine)
+
 # Initialize AVR states
 function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
+
+    # Set V_ref to field voltage calculated from initial power flow solution
+    avr.V_ref = V_f_init
+
+    # Set V_ss
+    avr.V_ss = V_f_init / avr.Ka
 
     # Define empty states vector to populate
     states = zeros(Float64, 4)
@@ -131,27 +138,23 @@ function update_avr_states!(
     Vll = states[VLL_IDX]
     Vfb = states[VFB_IDX]
 
-    # Without PSS
-    V_ref = avr.V_ref
+    # Without PSS (added avr.V_ss to acount for V_S in the diagram)
+    V_err = avr.V_ref - Vt
 
-
-    # Calculate block outputs and derivatives
-    _, dVm_dt = low_pass_mass_matrix(V_terminal_magnitude, Vm, 1.0, avr.Tr)
+    dVf_dt = low_pass_mass_matrix(V_terminal_magnitude, Vt, 1.0, avr.Tr)
 
     # High pass filter for feedback
-    y_hp, dVfb_dt = high_pass(Vr, Vfb, avr.Kf, avr.Tf)
+    output_hp, dVfb_dt = high_pass(Vt, Vfb, avr.Kf, avr.Tf)
 
-    # Lead-lag compensator
-    compensator_input = clamp(avr.V_ref - Vm - y_hp, avr.Vi_min, avr.Vi_max)
-    y_ll, dVrll_dt = lead_lag_mass_matrix(compensator_input, Vrll, 1.0, avr.Tc, avr.Tb)
+    compensator_input = V_err + avr.V_ss - Vfb
+    _, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
 
-    # Amplifier block
-    _, dVr_dt = low_pass_mass_matrix(y_ll, Vr, avr.Ka, avr.Ta)
+    dVt_dt = low_pass_mass_matrix(y_ll, Vt, avr.Ka, avr.Ta)
 
     # Update derivatives
-    derivatives[VM_IDX] = dVm_dt
-    derivatives[VRLL_IDX] = dVrll_dt
-    derivatives[VR_IDX] = dVr_dt
+    derivatives[VF_IDX] = dVf_dt
+    derivatives[VT_IDX] = dVt_dt
+    derivatives[VLL_IDX] = dVll_dt
     derivatives[VFB_IDX] = dVfb_dt
 
     return

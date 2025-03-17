@@ -40,10 +40,10 @@ mutable struct GasTG
     end
 end
 
-```
-The below equations are from the diagram in PowerWorld following link:
-https://www.powerworld.com/WebHelp/Content/TransientModels_HTML/Governor%20GAST_PTI%20and%20GASTD.htm
-```
+
+#The below equations are from the diagram in PowerWorld following link:
+# https://www.powerworld.com/WebHelp/Content/TransientModels_HTML/Governor%20GAST_PTI%20and%20GASTD.htm
+
 
 
 # Helper functions for the governor blocks
@@ -53,10 +53,10 @@ function low_pass(input, state, gain, time_constant)
     if time_constant > 0.0
         output = state
         derivative = (gain * input - state) / time_constant
-        return output, derivative
+        return derivative
     else
         # For zero time constant, output follows input
-        return gain * input, 0.0
+        return 0.0
     end
 end
 
@@ -85,18 +85,17 @@ function clamp(value, min_val, max_val)
 end
 # END OF HELPER FUNCTIONS
 
-```
-The module has two functions:
-Initializing states, and updating states
-This will help us in scalability
-```
+
+# The module has two functions:
+# Initializing states, and updating states
+# This will help us in scalability
 
 # Initialize governor states
 function initialize_gov(gov::GasTG, τ_m_init::Float64, ω_init::Float64)
-    ```
-    This function will initialize the governor states based on the steady-state rotor angular
-    velocity and the steady-state mechanical torque, both calculated by initialize_machine
-    ```
+
+    # This function will initialize the governor states based on the steady-state rotor angular
+    # velocity and the steady-state mechanical torque (both calculated by initialize_machine)
+
     # Extract governor states
     states = zeros(Float64, 3)
 
@@ -117,14 +116,18 @@ function update_gov_states!(
     gov::GasTG
 )
     # Extract governor states
-    xg1 = states[XG1_IDX]
-    xg2 = states[XG2_IDX]
-    xg3 = states[XG3_IDX]
+    fv = states[XG1_IDX]
+    ff = states[XG2_IDX]
+    et = states[XG3_IDX]
 
     # Calculate inverse droop (avoid division by zero) for numerical imstabilities faced when running the simulation
     inv_R = gov.R < eps() ? 0.0 : 1.0 / gov.R
 
+    # Printing this value to make sure it is feasile
+    println(inv_R)
+
     # Speed governor input calculation
+    # TODO: replace 1.0 with \omega ref if needed.
     speed_error = omega - 1.0
     reference_power = gov.P_ref
     speed_governing = inv_R * speed_error
@@ -132,22 +135,23 @@ function update_gov_states!(
     # Temperature control limiter
     temperature_limit = gov.AT + gov.KT * (gov.AT - xg3)
 
-    # Take minimum of power reference and temperature limit
+    # Take minimum of power reference and temperature limit (LV logic gate)
     governor_input = min(reference_power - speed_governing, temperature_limit)
 
     # Process through low pass filters with anti-windup
-    xg1_sat, dxg1_dt = low_pass_nonwindup(governor_input, xg1, 1.0, gov.T1, gov.V_min, gov.V_max)
-    _, dxg2_dt = low_pass(xg1_sat, xg2, 1.0, gov.T2)
-    _, dxg3_dt = low_pass(xg2, xg3, 1.0, gov.T3)
+    ff_sat, dff_dt = low_pass_nonwindup(governor_input, ff, 1.0, gov.T1, gov.V_min, gov.V_max)
+
+    dfv_dt = low_pass(ff_sat, fv, 1.0, gov.T2)
+    det_dt = low_pass(fv, et, 1.0, gov.T3)
 
     # Update derivatives
-    derivatives[XG1_IDX] = dxg1_dt
-    derivatives[XG2_IDX] = dxg2_dt
-    derivatives[XG3_IDX] = dxg3_dt
+    derivatives[XG1_IDX] = dff_dt
+    derivatives[XG2_IDX] = dfv_dt
+    derivatives[XG3_IDX] = det_dt
 
     # Calculate mechanical power output
     # TODO: Check this since D_turb is 0.0
-    Pm = xg2 - gov.D_turb * speed_error
+    Pm = fv - gov.D_turb * speed_error
 
     # Calculate mechanical torque (P = ω * τ, so τ = P/ω)
     τm = Pm / omega
