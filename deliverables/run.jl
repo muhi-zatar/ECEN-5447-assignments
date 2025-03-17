@@ -230,10 +230,33 @@ function run_simulation(network_file)
     tspan = (0.0, 5.0)
     prob = ODEProblem(ode_system!, states, tspan, p)
 
-    # Using Euler or other simple explicit method that doesn't use automatic differentiation
-    # Facing an error with autmatic differentiation
-    # TODO: check why
-    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01)
+    # Define the set of times to apply a perturbation
+    perturb_times = [4.5]               # Setting this far ahead for now – we can change this later
+
+    # Define the condition for which to apply a perturbation
+    function condition(u, t, integrator)
+        t in perturb_times
+    end
+
+    # Define the perturbation
+    function affect!(integrator)
+        #### Uncomment the desired perturbation ####
+        # Load Jump
+        integrator.p.network.Z_L *= 1.15
+
+        # Load Decrease
+        #integrator.p.network.Z_L *= 1.15
+
+        # Line Trip
+        #integrator.p.network.R_12 = 1e6
+        #integrator.p.network.X_12 = 1e6
+    end
+
+    # Create a Callback function that represents the perturbation
+    cb = DiscreteCallback(condition, affect!)
+
+    # Run simulation
+    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     # Process results
     t = sol.t
