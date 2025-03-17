@@ -97,11 +97,11 @@ B_1 = (B_12 / 2) + (B_13 / 2)                       # Shunt susceptance at Bus 1
 B_2 = (B_12 / 2) + (B_23 / 2)                       # Shunt susceptance at Bus 2
 B_3 = (B_13 / 2) + (B_23 / 2)                       # Shunt susceptance at Bus 3
 
-# Infinite Bus impedance (arbitrarily selected)
-z_IB = im * 0.1
+# Infinite Bus reactance (arbitrarily selected)
+X_IB = 0.1
 
-# Generator 2 impedance (to be replaced by synchronous machine model)
-z_gen2 = im * 0.1
+# Generator 2 reactance (to be replaced by synchronous machine model)
+X_gen2 = 0.1
 
 # Load impedance
 Z_dq = (abs.(V_dq) .^ 2) ./ conj.(S)
@@ -128,10 +128,10 @@ i_b3_d = -1 * B_3 * v_3_q                           # Bus 3 d-axis shunt current
 i_b3_q = B_3 * v_3_d                                # Bus 3 q-axis shunt current
 
 # Voltage behind reactance
-e_1_d = v_1_d + i_1_d * z_IB
-e_1_q = v_1_q + i_1_q * z_IB
-e_2_d = v_2_d + i_2_d * z_gen2
-e_2_q = v_2_q + i_2_q * z_gen2
+e_1_d = v_1_d - i_1_q * X_IB
+e_1_q = v_1_q + i_1_d * X_IB
+e_2_d = v_2_d - i_2_q * X_gen2
+e_2_q = v_2_q + i_2_d * X_gen2
 
 # Sanity check on voltages behind reactance
 E1 = e_1_d + im * e_1_q
@@ -145,13 +145,20 @@ if abs(E2) < v[2]
 end
 
 # Still working on this – using the pseudoinverse for now because the A matrix is singular
-A = [1 1 0; 1 0 -1; 0 1 1]
-b = [i_1_d - i_b1_d; i_b2_d - i_2_d; i_b3_d - i_3_d]
-(i_12_d, i_13_d, i_23_d) = pinv(A) * b
+A = [R_12 -X_12 0 0 0 0;
+    X_12 R_12 0 0 0 0;
+    0 0 R_12 -X_13 0 0;
+    0 0 X_13 R_13 0 0;
+    0 0 0 0 R_23 -X_23;
+    0 0 0 0 X_23 R_23]
+b = [v_1_d - v_2_d;
+    v_1_q - v_2_q;
+    v_1_d - v_3_d;
+    v_1_q - v_3_q;
+    v_2_d - v_3_d;
+    v_2_q - v_3_q]
+solution = A \ b
 
-A = [1 1 0; 1 0 -1; 0 1 1]
-b = [i_1_q - i_b1_q; i_b2_q - i_2_q; i_b3_q - i_3_q]
-(i_12_q, i_13_q, i_23_q) = pinv(A) * b
 
 # Sanity check
 res_i = [
@@ -207,7 +214,8 @@ function three_bus_network(du, u, p, t)
     du[18] = i_3_q + i_23_q + i_13_q - i_b3_q                               # d/dt (i_b3_q) = 0
 
     # Current injections (algebraic)
-    # TODO: Consider incorporating these algebraic constraints directly into the 6 above
+    # TODO: Try making emfs the algebraic states instead
+    # Need to find a way to introduce EMF without adding more constraints on current injections
     # Bus 1 (Infinite Bus)
     du[19] = i_1_d - (e_1_d - v_1_d) / z_IB                                 # d/dt (i_1_d) = 0
     du[20] = i_1_q - (e_1_q - v_1_q) / z_IB                                 # d/dt (i_1_q) = 0
@@ -275,7 +283,7 @@ end
 cb = DiscreteCallback(condition, affect!)
 
 # Run simulation
-sol = solve(prob, Rodas5P())
+sol = solve(prob, Rodas5P(), dense=false)
 
 
 # -----------------------------------------------------------------------------------------
