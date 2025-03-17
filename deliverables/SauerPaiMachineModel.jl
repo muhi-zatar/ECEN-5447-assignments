@@ -94,8 +94,8 @@ This will help us in scalability
 function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     ```
     This function will initialize the states of the machine at steady-state.
-    It will also initialize the field voltage (to be used by initialize_avr) and the mechanical
-    torque (to be used by initialize_gov)
+    It will also initialize the field voltage, to be used by initialize_avr, and the mechanical
+    torque, to be used by initialize_gov.
     ```
     # Calculate initial values for the six states based on steady-state conditions
     # This is a simplified initialization
