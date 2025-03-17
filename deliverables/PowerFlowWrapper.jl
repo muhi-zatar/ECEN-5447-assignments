@@ -8,18 +8,6 @@ using PowerFlows
 const PSY = PowerSystems
 const PF = PowerFlows
 
-"""
-    get_powerflow_results(network_description)
-
-Loads a network from a raw file and runs power flow analysis.
-Returns the voltage magnitude, angle, active power, and reactive power for the required bus (bus 2 for our case).
-
-# Arguments
-- `network_description`: Path to the raw file containing network description according to MatPower format.
-
-# Returns
-- Tuple of (voltage magnitude, voltage angle, active power, reactive power) at the required bus (bus 2 fo our case)
-"""
 function get_powerflow_results(network_description)
     # TODO: Add the number of bus in the input to make the output bus configurable (for return values).
     # Loading the network data using power systems package
