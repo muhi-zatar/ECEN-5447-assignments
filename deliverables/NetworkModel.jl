@@ -31,6 +31,16 @@ const I_B2_Q_IDX = 20
 const I_B3_D_IDX = 21
 const I_B3_Q_IDX = 22
 
+# Helper function
+function sanity_check(test_value, true_value, calculation_under_test::String)
+    difference = norm.(test_value .- true_value, Inf)
+    if difference > 1e-6
+        throw("$calculation_under_test calculation is probably wrong. Difference between calculated and expected: $difference")
+    else
+        println("$calculation_under_test calculation looks good. Difference between calculated and expected: $difference")
+    end
+end
+
 # Network structure for parameters
 mutable struct ThreeBusNetwork
     # Network parameters
@@ -103,11 +113,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
 
     # Sanity check
     V_test = V_dq .* ℯ .^ (-im * π / 2)
-    if norm(V_test - V_terminal, Inf) > 1e-10
-        throw("DQ voltage calculation is probably wrong. Difference between calculated and expected: $(norm(V_test - V_terminal,Inf))")
-    else
-        println("DQ voltage calculation looks good. Difference between calculated and expected: $(norm(V_test - V_terminal,Inf))")
-    end
+    sanity_check(V_test, V_terminal, "DQ voltage")
 
     # Find complex current
     I_dq = conj(S ./ V_dq)            # Complex bus current injections in network DQ reference frame
@@ -122,11 +128,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     P_test = (v_d .* i_d) .+ (v_q .* i_q)
     Q_test = (v_q .* i_d) .- (v_d .* i_q)
     S_test = complex.(P_test, Q_test)
-    if norm(S_test - S, Inf) > 1e-10
-        throw("DQ current calculation is probably wrong. Difference between calculated and expected apparent power: $(norm(S_test - S,Inf))")
-    else
-        println("DQ current calculation looks good. Difference between calculated and expected apparent power: $(norm(S_test - S,Inf))")
-    end
+    sanity_check(S_test, S, "DQ current")
 
     # Find load impedance
     Z_dq = (abs.(V_dq) .^ 2) ./ conj.(S)
@@ -191,11 +193,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
         states[I_3_Q_IDX] + states[I_23_Q_IDX] + states[I_13_Q_IDX] - states[I_B3_Q_IDX]
     ]
 
-    if norm(res_i, Inf) > 1e-10
-        @warn "DQ current calculation is probably wrong. Unaccounted for current: $(norm(res_i,Inf))"
-    else
-        println("DQ current calculation looks good. Unaccounted for current: $(norm(res_i,Inf))")
-    end
+    sanity_check(res_i, zeros(6), "Line current")
 
     # Populate mass matrix
     M_diagonal = zeros(Float64, NUM_STATES)
