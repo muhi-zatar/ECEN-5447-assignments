@@ -6,7 +6,8 @@ export ThreeBusNetwork, initialize_network, update_network_states!, M_network
 
 using LinearAlgebra
 
-# Definining the size and indices for the state vector
+# Definining some constants
+const BUS_MACHINE_MODEL = 2
 const NUM_STATES = 22
 const I_12_D_IDX = 1
 const I_12_Q_IDX = 2
@@ -121,8 +122,8 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     i_q = imag(I_dq)                  # Quadrature-axis component of bus current injections
 
     # Bus 2 (our model) injection current in network reference frame
-    i_2_d = i_d[2]
-    i_2_q = i_q[2]
+    i_2_d = i_d[BUS_MACHINE_MODEL]
+    i_2_q = i_q[BUS_MACHINE_MODEL]
 
     # Sanity check
     P_test = (v_d .* i_d) .+ (v_q .* i_q)
