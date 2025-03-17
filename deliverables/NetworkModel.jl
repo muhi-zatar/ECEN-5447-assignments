@@ -4,7 +4,7 @@ module NetworkModel
 # Exporing the functions
 export ThreeBusNetwork, initialize_network, update_network_states!, M_network
 
-#using ..PowerFlowSolver
+using LinearAlgebra
 
 # Definining the size and indices for the state vector
 const NUM_STATES = 22
@@ -80,14 +80,14 @@ This will help us in scalability
 ```
 This function will initialize the states of the network at steady-state.
 Two important notes when working with the network:
-    1) We work in the DQ reference frame of the network, which is different than the DQ reference
+    1 -- We work in the DQ reference frame of the network, which is different than the DQ reference
        frame of the machine. The network DQ reference frame rotates at a constant angular velocity,
        which is assumed to be a constant 60Hz.
-    2) We work on every bus in the network, which means that we want the power flow results to be
+    2 -- We work on every bus in the network, which means that we want the power flow results to be
        vectors of voltages, angles, etc., rather than single values as used by the generator 
        components.
 ```
-function initialize_network(network::ThreeBusNetwork, V_m, θ, P, Q)
+function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::Vector{Float64}, P::Vector{Float64}, Q::Vector{Float64})
     # Prepare state vector for return
     states = zeros(Float64, NUM_STATES)
 
@@ -103,10 +103,10 @@ function initialize_network(network::ThreeBusNetwork, V_m, θ, P, Q)
 
     # Sanity check
     V_test = V_dq .* ℯ .^ (-im * π / 2)
-    if norm(V_test - V_abc, Inf) > 1e-10
-        throw("DQ voltage calculation is probably wrong. Difference between calculated and expected: $(norm(V_test - V_abc,Inf))")
+    if norm(V_test - V_terminal, Inf) > 1e-10
+        throw("DQ voltage calculation is probably wrong. Difference between calculated and expected: $(norm(V_test - V_terminal,Inf))")
     else
-        println("DQ voltage calculation looks good. Difference between calculated and expected: $(norm(V_test - V_abc,Inf))")
+        println("DQ voltage calculation looks good. Difference between calculated and expected: $(norm(V_test - V_terminal,Inf))")
     end
 
     # Find complex current
@@ -219,7 +219,7 @@ function initialize_network(network::ThreeBusNetwork, V_m, θ, P, Q)
     network.M = Diagonal(M_diagonal)
 
     # Return initial states
-    return states
+    return states, i_2_d, i_2_q
 end
 
 function update_network_states!(
