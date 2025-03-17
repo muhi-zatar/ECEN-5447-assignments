@@ -104,6 +104,12 @@ end
 # Initialize AVR states
 function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
 
+    # Set V_ref to field voltage calculated from initial power flow solution
+    avr.V_ref = V_f_init
+
+    # Set V_ss
+    avr.V_ss = V_f_init / avr.Ka
+
     # Define empty states vector to populate
     states = zeros(Float64, 4)
 
@@ -133,15 +139,15 @@ function update_avr_states!(
     Vfb = states[VFB_IDX]
 
     # Without PSS (added avr.V_ss to acount for V_S in the diagram)
-    V_ref = avr.V_ref + avr.V_ss
+    V_err = avr.V_ref - Vt
 
-    dVf_dt = low_pass_mass_matrix(V_terminal_magnitude, Vf, 1.0, avr.Tr)
+    dVf_dt = low_pass_mass_matrix(V_terminal_magnitude, Vt, 1.0, avr.Tr)
 
     # High pass filter for feedback
     output_hp, dVfb_dt = high_pass(Vt, Vfb, avr.Kf, avr.Tf)
 
-    compensator_input = avr.V_ref - Vf - output_hp, avr.Vi_min, avr.Vi_max
-    output_ll, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
+    compensator_input = V_err + avr.V_ss - Vfb
+    _, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
 
     dVt_dt = low_pass_mass_matrix(y_ll, Vt, avr.Ka, avr.Ta)
 
