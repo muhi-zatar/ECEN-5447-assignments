@@ -2,7 +2,7 @@
 module NetworkModel
 
 # Exporing the functions
-export ThreeBusNetwork, initialize_network, update_network_states!, M_network
+export ThreeBusNetwork, initialize_network, update_network_states!, BUS_MACHINE_MODEL
 
 using LinearAlgebra
 
