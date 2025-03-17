@@ -62,10 +62,10 @@ function run_simulation(network_file)
     V_sol, θ_sol, P_sol, Q_sol = get_powerflow_results(network_file)
 
     # Select bus for our model :D
-    V_mag = V_sol[2]
-    V_angle = θ_sol[2]
-    P = P_sol[2]
-    Q = Q_sol[2]
+    V_mag = V_sol[BUS_MACHINE_MODEL]
+    V_angle = θ_sol[BUS_MACHINE_MODEL]
+    P = P_sol[BUS_MACHINE_MODEL]
+    Q = Q_sol[BUS_MACHINE_MODEL]
 
     # Convert voltage to complex form
     V_terminal = V_mag * exp(im * V_angle)
