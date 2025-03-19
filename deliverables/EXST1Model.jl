@@ -50,32 +50,28 @@ mutable struct EXST1
     end
 end
 
-# TODO: Check if these helper function behave as they should
-# When checked against Jose's implementation in the julia package, they are not the same.
-# Bunch of helper functions for the AVR blocks
 function clamp(value, min_val, max_val)
     return max(min(value, max_val), min_val)
 end
 
 function low_pass_mass_matrix(input, state, gain, time_constant)
-    # Taken literally from the diagram of powerworld
     if time_constant > 0.0
         derivative = (gain * input - state) / time_constant
-        return derivative
+        return gain * input, derivative 
     else
-        # If time constant is zero, output = gain * input (algebraic)
         return gain * input, 0.0
     end
 end
 
+
+
 function high_pass(input, state, gain, time_constant)
     if time_constant > 0.0
-        output = gain * (input - state)
-        derivative = input / time_constant - state / time_constant
+        derivative = (input - state) / time_constant
+        new_state = state + derivative
+        output = gain * new_state
         return output, derivative
     else
-        # For zero time constant, output is zero
-        # ASSUMPTION
         return 0.0, 0.0
     end
 end
@@ -84,12 +80,14 @@ function lead_lag_mass_matrix(input, state, gain, t_numerator, t_denominator)
     if t_denominator > 0.0
         output = (gain * t_numerator * input + state * (t_denominator - t_numerator)) / t_denominator
         derivative = (input - state) / t_denominator
-        return output, derivative
+        return output, derivative 
     else
-        # For zero denominator, output = gain * input
         return gain * input, 0.0
     end
 end
+
+
+
 # END OF HELPER FUNCTIONS
 
 
@@ -104,8 +102,8 @@ end
 # Initialize AVR states
 function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
 
-    # Set V_ref to field voltage calculated from initial power flow solution
-    avr.V_ref = V_f_init
+    # Set V_ref to field voltage calculated from initial power flow solution (this was set to V_f_init, I think it is wrong)
+    avr.V_ref = V_terminal_magnitude
 
     # Set V_ss
     avr.V_ss = V_f_init / avr.Ka
@@ -122,39 +120,51 @@ function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
     return states
 end
 
-# Update AVR states
 function update_avr_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
     V_terminal_magnitude::Float64,
     avr::EXST1
 )
+
+    # Steps for calculation:
+    # Step 1:Sense the Terminal Voltage and Apply a Low-Pass Filter (Block 2 in the Diagram)
+    # Step 2: Compute the Voltage Error # Summation Block 
+    # Step 3: Apply Lead-Lag Compensation (Block 3 in the Diagram (Lead-Lag Filter))
+    # Step 4: Amplifier Response ( Block 1 in the Diagram )
+    # Step 5: Compute Field Voltage
+    # step 6: Apply Rate Feedback for Damping
+    # Step 7: update derivates
     # Extract AVR states
     Vf = states[VF_IDX]
     Vt = states[VT_IDX]
     Vll = states[VLL_IDX]
     Vfb = states[VFB_IDX]
 
-    # Without PSS (added avr.V_ss to acount for V_S in the diagram)
-    V_err = avr.V_ref - Vt
+    Vt_filtered, dVt_dt = low_pass_mass_matrix(V_terminal_magnitude, Vt, 1.0, avr.Tr)
 
-    dVf_dt = low_pass_mass_matrix(V_terminal_magnitude, Vt, 1.0, avr.Tr)
+    # Added stabilizer
+    V_err = (avr.V_ref - Vt_filtered) + avr.V_ss
 
-    # High pass filter for feedback
+    y_ll, dVll_dt = lead_lag_mass_matrix(V_err, Vll, 1.0, avr.Tc, avr.Tb)
+
+    # From regulator
+    V_reg, dVreg_dt = low_pass_mass_matrix(y_ll, Vll, avr.Ka, avr.Ta)
+
+    # Without clamping
+    Vf_new = V_reg
+    dVf_dt = (Vf_new - Vf) / avr.Ta 
+
     output_hp, dVfb_dt = high_pass(Vt, Vfb, avr.Kf, avr.Tf)
 
-    compensator_input = V_err + avr.V_ss - Vfb
-    y_ll, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
-
-    dVt_dt = low_pass_mass_matrix(y_ll, Vt, avr.Ka, avr.Ta)
-
-    # Update derivatives
     derivatives[VF_IDX] = dVf_dt
     derivatives[VT_IDX] = dVt_dt
     derivatives[VLL_IDX] = dVll_dt
     derivatives[VFB_IDX] = dVfb_dt
 
-    return Vf
+    return Vf_new
 end
+
+
 
 end # module
