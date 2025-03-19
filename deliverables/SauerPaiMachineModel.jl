@@ -118,6 +118,11 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     i_d = real(idq)
     i_q = imag(idq)
 
+    # Reconstruct power and print for sanity check:
+    p_bus = v_d * i_d + v_q * i_q
+    q_bus = v_q * i_d - v_d * i_q
+    println("Initial S_bus=$(complex(p_bus, q_bus))")       # This is correct
+
     # Initialize states - simplified for steady state
     A = [-machine.γ_q1 0 0 (1-machine.γ_q1) 0;
         0 machine.γ_d1 (1-machine.γ_d1) 0 0;
@@ -132,8 +137,8 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
 
     # Tideness and easier tracability
     solution = A \ b
-    eq_p = solution[1]
-    ed_p = solution[2]
+    ed_p = solution[1]
+    eq_p = solution[2]
     ψd_pp = solution[3]
     ψq_pp = solution[4]
     Vf = solution[5]
@@ -192,18 +197,24 @@ function update_machine_states!(
     v_q = v_mag * cos(δ - θ)       # Eqn 15.4
     V_mag = abs(complex(v_d, v_q)) # Debugging
 
-    # Calculate currents (Use 15.11 and 15.15 to eliminate ψq and ψd, solve for Id and Iq)
-    A = [machine.Xd_pp machine.R; machine.R -machine.Xq_pp]
-    b = [-v_q + machine.γ_d1 * eq_p + (1 - machine.γ_d1) * ψd_pp; -v_d + machine.γ_q1 * ed_p - (1 - machine.γ_q1) * ψq_pp]
-    currents = A \ b
-    i_d = currents[1]
-    i_q = currents[2]
+    # Calculate currents and fluxes by solving system of equations from Milano Eq 15.11 and 15.15
+    A = [machine.R 0 0 1;
+        0 machine.R -1 0;
+        machine.Xd_pp 0 1 0;
+        0 machine.Xq_pp 0 1]
+    b = [-v_d;
+        -v_q;
+        machine.γ_d1 * eq_p + (1 - machine.γ_d1) * ψd_pp;
+        -1 * machine.γ_q1 * ed_p + (1 - machine.γ_q1) * ψq_pp]
+    solution = A \ b
+    i_d = solution[1]
+    i_q = solution[2]
+    ψ_d = solution[3]
+    ψ_q = solution[4]
     # TODO: This is wrong – need to revisit
     I_mag = abs(complex(i_d, i_q))
 
-    # We need synchronous fluxes to get electrical torque
-    ψ_d = machine.R * i_q + v_q
-    ψ_q = -1 * (machine.R * i_d + v_d)
+    # Calculate electrical torque
     τ_e = ψ_d * i_q - ψ_q * i_d
 
 

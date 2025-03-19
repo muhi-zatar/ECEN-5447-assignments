@@ -149,7 +149,7 @@ function run_simulation(network_file)
     push!(ω_aux, ω_init)
     push!(V_terminal_aux, V_terminal)
     push!(Vf_aux, Vf_init)
-    push!(τm_aux, P)
+    push!(τm_aux, τ_m_init)
     push!(S_terminal_machine_aux, Complex(P, Q))
 
     # For debugging:
