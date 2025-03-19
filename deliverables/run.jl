@@ -69,9 +69,11 @@ function run_simulation(network_file)
 
     # Convert voltage to complex form
     V_terminal = V_mag * exp(im * V_angle)
+    I_terminal = conj(complex(P, Q) / V_terminal)
     println("Initial power flow results:")
     println("V_terminal = $V_mag p.u $V_angle rad")
     println("P = $P pu, Q = $Q pu")
+    println("I_terminal = $(abs(I_terminal)) p.u., $(angle(I_terminal)) rad")
 
     # Step 2: Initialize models
     # Create model instances
@@ -92,7 +94,7 @@ function run_simulation(network_file)
     )
 
     # Initialize states
-    network_states, i_2_r_init, i_2_i_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
+    network_states = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
     avr_states = initialize_avr(avr, V_mag, Vf_init)  # Assume zero field current initially, is that right?
     ω_init = 1.0
@@ -125,16 +127,36 @@ function run_simulation(network_file)
         gov_idx,
     )
 
-    # Define global variables for intermediate values
+    # Define auxiliary variables for intermediate values.
+    # We will use vectors rather than global variables to avoid performance issues (https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-global-variables)
     # These are needed because we can't modify p during integration
-    Vf_global = Vf_init
-    τm_global = P
-    V_terminal_magnitude_global = V_mag
-    V_terminal_global = V_terminal
-    θ_global = V_angle
-    ω_global = 1.0
-    i_2_r_global = i_2_r_init                    # Current injection at Bus 2 (network D-axis)
-    i_2_i_global = i_2_i_init                    # Current injection at Bus 2 (network Q-axis)
+    # Start by allocating empty typed vectors
+    # Used by ODE System:
+    V_terminal_magnitude_aux = Float64[]          # Machine bus voltage magnitude (from Power Flow)
+    ω_aux = Float64[]                             # Rotor angular velocity (assumed to be 1.0 p.u.)
+    V_terminal_aux = Complex{Float64}[]           # Machine bus quasi-static voltage phasor (from Power Flow)
+    Vf_aux = Float64[]                            # Field voltage (from machine initialization)
+    τm_aux = Float64[]                            # Mechanical torque (Assume τm = τe = P)
+    S_terminal_machine_aux = Complex{Float64}[]   # Machine bus apparent power (from Power Flow)
+
+    # For debugging:
+    S_terminal_network_aux = Complex{Float64}[]
+    V_mag_machine_aux = Float64[]
+    I_mag_machine_aux = Float64[]
+
+    # Now populate the first entry with the appropriate values from initialization
+    push!(V_terminal_magnitude_aux, V_mag)
+    push!(ω_aux, ω_init)
+    push!(V_terminal_aux, V_terminal)
+    push!(Vf_aux, Vf_init)
+    push!(τm_aux, P)
+    push!(S_terminal_machine_aux, Complex(P, Q))
+
+    # For debugging:
+    push!(S_terminal_network_aux, Complex(0.0, 0.0))
+    push!(V_mag_machine_aux, 0.0)
+    push!(I_mag_machine_aux, 0.0)
+    println("Initial auxiliary variables:\nomega=$(ω_aux[end]), τm=$(τm_aux[end]), Vf=$(Vf_aux[end]), V_mag=$(V_terminal_magnitude_aux[end]), V_mag_machine=$(V_mag_machine_aux[end]), I_mag_machine=$(I_mag_machine_aux[end]), S_terminal_machine=$(S_terminal_machine_aux[end]), S_terminal_network=$(S_terminal_network_aux[end])")
 
     # Function to apply perturbation
     # function apply_perturbation!(vars, t, params)
@@ -185,32 +207,38 @@ function run_simulation(network_file)
         du_gov = zeros(Float64, length(p.gov_idx))
 
         # Update the states of each component
-        Vf_avr = update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_global, avr)
+        Vf_avr = update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_aux[end], avr)
 
-        # Update global field voltage
-        Vf_global = Vf_avr
+        τ_m = update_gov_states!(gov_states_f64, du_gov, ω_aux[end], governor)
 
-        τ_m = update_gov_states!(gov_states_f64, du_gov, ω_global, governor)
+        # TODO: Machine apparent power is wrong from the get-go. Need to figure out why
+        I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(machine_states_f64, du_machine, V_terminal_aux[end], Vf_aux[end], τm_aux[end], machine)
 
-        # Update global mechanical torque
-        τm_global = τ_m
+        V_terminal_network_pos, S_terminal_network, I_terminal_network_pos = update_network_states!(network_states_f64, du_network, S_terminal_machine_aux[end], network)
 
-        V_mag_bus, I_RI, θ_bus, ω_machine = update_machine_states!(machine_states_f64, du_machine, V_terminal_global, Vf_global, τm_global, machine)
+        # Update global/auxiliary variables to prepare for the next step
+        # Machine bus voltage magnitude: Used by AVR, returned by network
+        push!(V_terminal_magnitude_aux, abs(V_terminal_network_pos))
 
-        θ_global = θ_bus
+        # Rotor angular velocity: Used by governor, returned by machine
+        push!(ω_aux, ω_machine)
 
-        i_2_r_global = real(I_RI)
-        i_2_i_global = imag(I_RI)
+        # Machine bus quasi-static voltage phasor: Used by machine, returned by network
+        push!(V_terminal_aux, V_terminal_network_pos)
 
-        V_terminal_network = update_network_states!(network_states_f64, du_network, i_2_r_global, i_2_i_global, θ_global, network)
+        # Field voltage: Used by machine, returned by AVR
+        push!(Vf_aux, Vf_avr)
 
-        # Update global terminal voltage and rotor speed
-        ω_global = ω_machine
-        V_terminal_magnitude_global = V_mag_bus             # Bus 2 terminal voltage magnitude
-        # TODO: Need to make the proper conversion from complex terminal voltage in the network DQ 
-        # frame to the positive sequence domain.
-        # Alternatively, change update_machine_states! to only use V_dq (I'm leaning towards this)
-        V_terminal_global = V_terminal_network                             # Bus 2 terminal voltage (positive sequence phasor)
+        # Mechanical torque: Used by machine, returned by governor
+        push!(τm_aux, τ_m)
+
+        # Machine apparent power: Used by network, returned by machine
+        push!(S_terminal_machine_aux, S_terminal_machine)
+
+        # Debugging:
+        push!(S_terminal_network_aux, S_terminal_network)
+        push!(V_mag_machine_aux, V_mag)
+        push!(I_mag_machine_aux, I_mag)
 
 
         # Copy derivatives to output
@@ -221,8 +249,7 @@ function run_simulation(network_file)
 
         # For debugging printing some results,
         if abs(t - round(t)) < 0.0001
-            #println("t=$t: delta=$delta, omega=$omega, τe=$τe, τm=$τm, Vf=$Vf, V_mag=$(system_vars.V_terminal_magnitude)")
-            println("t=$t: omega=$ω_global, τm=$τm_global, Vf=$Vf_global, V_mag=$V_terminal_magnitude_global")
+            println("t=$t: omega=$(ω_aux[end]), τm=$(τm_aux[end]), Vf=$(Vf_aux[end]), V_mag=$(V_terminal_magnitude_aux[end]), V_mag_machine=$(V_mag_machine_aux[end]), I_mag_machine=$(I_mag_machine_aux[end]), S_terminal_machine=$(S_terminal_machine_aux[end]), S_terminal_network=$(S_terminal_network_aux[end])")
         end
     end
 

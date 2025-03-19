@@ -120,9 +120,15 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     S = complex.(P, Q)
     V_terminal = V_m .* ℯ .^ (im .* θ)
 
+
+    print("\n\nInitial positive sequence voltage at the bus: $(V_m[BUS_MACHINE_MODEL]) ∠ $(rad2deg(θ[BUS_MACHINE_MODEL]))\n\n")
+
     # Construct initial current to pass forward
     I_RI = S ./ conj.(V_terminal)
     I_2_RI = I_RI[BUS_MACHINE_MODEL]
+    I_2_m = abs(I_2_RI)
+    I_2_ang = angle(I_2_RI)
+    print("\n\nInitial positive sequence current at the bus: $(I_2_m) ∠ $(rad2deg(I_2_ang))\n\n")
 
     ##### MOVE TO NETWORK DQ REFERENCE FRAME #####
     # Find DQ voltage (Milano Eigenvalue Problems Eqn 1.44)
@@ -236,15 +242,13 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     network.M = M_diagonal
 
     # Return initial states
-    return states, real(I_2_RI), imag(I_2_RI)
+    return states
 end
 
 function update_network_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
-    i_2_r::Float64,
-    i_2_i::Float64,
-    bus_angle::Float64,
+    S_bus::Complex{Float64},
     network::ThreeBusNetwork
 )
     # Extract network states
@@ -271,11 +275,11 @@ function update_network_states!(
     i_b3_d = states[I_B3_D_IDX]
     i_b3_q = states[I_B3_Q_IDX]
 
-    # Convert real and imaginary current at bus 2 into network DQ reference frame
-    I_RI = [i_2_r; i_2_i]                   # Positive sequence current injected at Bus 2
-    I_dq = ri_dq(bus_angle) * I_RI
-    i_2_d = I_dq[1]
-    i_2_q = I_dq[2]
+    ## Calculate network DQ current from bus power and voltage
+    V_dq = complex(v_2_d, v_2_q)
+    I_dq = conj(S_bus ./ V_dq)            # Complex bus current injections in network DQ reference frame
+    i_2_d = real(I_dq)                    # Direct-axis component of bus current injections
+    i_2_q = imag(I_dq)                    # Quadrature-axis component of bus current injections
 
     # Unpack real and imaginary components of the load for convenience
     R_load = real(network.Z_L)
@@ -317,9 +321,18 @@ function update_network_states!(
     derivatives[I_B3_D_IDX] = i_3_d + i_23_d + i_13_d - i_b3_d                                                # d/dt (i_b3_d) = 0
     derivatives[I_B3_Q_IDX] = i_3_q + i_23_q + i_13_q - i_b3_q                                                # d/dt (i_b3_q) = 0
 
-    # Compute positive sequence terminal voltage to return
+    # Compute apparent power to return (Milano Eigenvalue Problems Eq. 1.42)
+    P_terminal = v_2_d * i_2_d + v_2_q * i_2_q
+    Q_terminal = v_2_q * i_2_d - v_2_d * i_2_q
+    S_terminal = complex(P_terminal, Q_terminal)
+
+    # Compute positive sequence terminal voltage to return (Milano Eigenvalue Problems Eq 1.43)
     V_terminal = (v_2_d + im * v_2_q) * exp(-im * π / 2)
 
-    return V_terminal
+    # Compute positive sequence terminal injected current to return (can check this against Milano Eigenvalue Problems Eq 1.41)
+    I_terminal = conj(S_terminal / V_terminal)
+
+    # Return all values (used for debugging – we can return fewer values after we figure out what's wrong)
+    return V_terminal, S_terminal, I_terminal
 end
 end # module

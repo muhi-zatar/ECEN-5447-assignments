@@ -190,7 +190,7 @@ function update_machine_states!(
     # Terminal voltage in dq reference frame
     v_d = v_mag * sin(δ - θ)       # Eqn 15.4
     v_q = v_mag * cos(δ - θ)       # Eqn 15.4
-    V_dq = complex(v_d, v_q)
+    V_mag = abs(complex(v_d, v_q)) # Debugging
 
     # Calculate currents (Use 15.11 and 15.15 to eliminate ψq and ψd, solve for Id and Iq)
     A = [machine.Xd_pp machine.R; machine.R -machine.Xq_pp]
@@ -198,6 +198,8 @@ function update_machine_states!(
     currents = A \ b
     i_d = currents[1]
     i_q = currents[2]
+    # TODO: This is wrong – need to revisit
+    I_mag = abs(complex(i_d, i_q))
 
     # We need synchronous fluxes to get electrical torque
     ψ_d = machine.R * i_q + v_q
@@ -234,14 +236,14 @@ function update_machine_states!(
     derivatives[PSI_D_PP] = (1.0 / machine.Td0_pp) * (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
     derivatives[PSI_Q_PP] = (1.0 / machine.Tq0_pp) * (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
 
-    # Calculate power at the bus
-    p_bus = v_d * i_d + v_q * i_q
-    q_bus = v_q * i_d - v_d * i_q
+    # Calculate power at the bus to return
+    p_bus = v_d * i_d + v_q * i_q       # Milano Eq. 15.2
+    q_bus = v_q * i_d - v_d * i_q       # Milano Eq. 15.3
     S_bus = complex(p_bus, q_bus)
 
     # Calculate current in positive sequence
     I_RI = conj(S_bus / V_terminal)
 
-    return abs(V_dq), I_RI, angle(S_bus), ω
+    return I_RI, S_bus, ω, V_mag, I_mag
 end
 end # module 
