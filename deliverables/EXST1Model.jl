@@ -57,7 +57,7 @@ end
 function low_pass_mass_matrix(input, state, gain, time_constant)
     if time_constant > 0.0
         derivative = (gain * input - state) / time_constant
-        return gain * input, derivative 
+        return gain * input, derivative
     else
         return gain * input, 0.0
     end
@@ -80,7 +80,7 @@ function lead_lag_mass_matrix(input, state, gain, t_numerator, t_denominator)
     if t_denominator > 0.0
         output = (gain * t_numerator * input + state * (t_denominator - t_numerator)) / t_denominator
         derivative = (input - state) / t_denominator
-        return output, derivative 
+        return output, derivative
     else
         return gain * input, 0.0
     end
@@ -143,26 +143,27 @@ function update_avr_states!(
 
     Vt_filtered, dVt_dt = low_pass_mass_matrix(V_terminal_magnitude, Vt, 1.0, avr.Tr)
 
-    # Added stabilizer
-    V_err = (avr.V_ref - Vt_filtered) + avr.V_ss
+    y_hp, dVfb_dt = high_pass(Vf, Vfb, avr.Kf, avr.Tf)
 
-    y_ll, dVll_dt = lead_lag_mass_matrix(V_err, Vll, 1.0, avr.Tc, avr.Tb)
+    # Added stabilizer
+    V_err = avr.V_ref - Vt_filtered
+    compensator_input = V_err + avr.V_ss - y_hp
+
+    y_ll, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
 
     # From regulator
-    V_reg, dVreg_dt = low_pass_mass_matrix(y_ll, Vll, avr.Ka, avr.Ta)
+    _, dVf_dt = low_pass_mass_matrix(y_ll, Vf, avr.Ka, avr.Ta)
 
     # Without clamping
-    Vf_new = V_reg
-    dVf_dt = (Vf_new - Vf) / avr.Ta 
-
-    output_hp, dVfb_dt = high_pass(Vt, Vfb, avr.Kf, avr.Tf)
+    # Vf_new = V_reg
+    # dVf_dt = (Vf_new - Vf) / avr.Ta
 
     derivatives[VF_IDX] = dVf_dt
     derivatives[VT_IDX] = dVt_dt
     derivatives[VLL_IDX] = dVll_dt
     derivatives[VFB_IDX] = dVfb_dt
 
-    return Vf_new
+    return
 end
 
 

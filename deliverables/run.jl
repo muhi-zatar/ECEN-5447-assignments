@@ -110,10 +110,10 @@ function run_simulation(network_file)
     println("Governor states: $governor_states")
 
     # Define state indices for easier access
-    network_idx = 1:22
-    machine_idx = 23:28
-    avr_idx = 29:32
-    gov_idx = 33:35
+    network_idx = 1:16
+    machine_idx = 17:22
+    avr_idx = 23:26
+    gov_idx = 27:29
 
     # Create ODE parameters structure
     p = ODEParams(
@@ -143,6 +143,7 @@ function run_simulation(network_file)
     S_terminal_network_aux = Complex{Float64}[]
     V_mag_machine_aux = Float64[]
     I_mag_machine_aux = Float64[]
+    t_aux = Float64[]
 
     # Now populate the first entry with the appropriate values from initialization
     push!(V_terminal_magnitude_aux, V_mag)
@@ -156,6 +157,7 @@ function run_simulation(network_file)
     push!(S_terminal_network_aux, Complex(0.0, 0.0))
     push!(V_mag_machine_aux, 0.0)
     push!(I_mag_machine_aux, 0.0)
+    push!(t_aux, 0.0)
     println("Initial auxiliary variables:\nomega=$(ω_aux[end]), τm=$(τm_aux[end]), Vf=$(Vf_aux[end]), V_mag=$(V_terminal_magnitude_aux[end]), V_mag_machine=$(V_mag_machine_aux[end]), I_mag_machine=$(I_mag_machine_aux[end]), S_terminal_machine=$(S_terminal_machine_aux[end]), S_terminal_network=$(S_terminal_network_aux[end])")
 
     # Function to apply perturbation
@@ -169,14 +171,14 @@ function run_simulation(network_file)
     # end
 
     # Step 2.5: Define Mass Matrix for the system
-    M_system = zeros(Float64, 35)
-    M_system[network_idx] = network.M
-    M_system[machine_idx] = ones(6)
-    M_system[avr_idx] = ones(4)
-    M_system[gov_idx] = ones(3)
+    # M_system = zeros(Float64, 35)
+    # M_system[network_idx] = network.M
+    # M_system[machine_idx] = ones(6)
+    # M_system[avr_idx] = ones(4)
+    # M_system[gov_idx] = ones(3)
 
     # ODE function
-    function ode_system!(du, u, p, t, mass_matrix=M_system)
+    function ode_system!(du, u, p, t)
         # Extract states for each component
         network_states = u[p.network_idx]
         machine_states = u[p.machine_idx]
@@ -207,11 +209,10 @@ function run_simulation(network_file)
         du_gov = zeros(Float64, length(p.gov_idx))
 
         # Update the states of each component
-        Vf_avr = update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_aux[end], avr)
+        update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_aux[end], avr)
 
         τ_m = update_gov_states!(gov_states_f64, du_gov, ω_aux[end], governor)
 
-        # TODO: Machine apparent power is wrong from the get-go. Need to figure out why
         I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(machine_states_f64, du_machine, V_terminal_aux[end], Vf_aux[end], τm_aux[end], machine)
 
         V_terminal_network_pos, S_terminal_network, I_terminal_network_pos = update_network_states!(network_states_f64, du_network, S_terminal_machine_aux[end], network)
@@ -227,7 +228,7 @@ function run_simulation(network_file)
         push!(V_terminal_aux, V_terminal_network_pos)
 
         # Field voltage: Used by machine, returned by AVR
-        push!(Vf_aux, Vf_avr)
+        push!(Vf_aux, avr_states_f64[1])
 
         # Mechanical torque: Used by machine, returned by governor
         push!(τm_aux, τ_m)
@@ -239,6 +240,7 @@ function run_simulation(network_file)
         push!(S_terminal_network_aux, S_terminal_network)
         push!(V_mag_machine_aux, V_mag)
         push!(I_mag_machine_aux, I_mag)
+        push!(t_aux, t)
 
 
         # Copy derivatives to output
@@ -248,8 +250,13 @@ function run_simulation(network_file)
         du[p.gov_idx] .= du_gov
 
         # For debugging printing some results,
-        if abs(t - round(t)) < 0.0001
-            println("t=$t: omega=$(ω_aux[end]), τm=$(τm_aux[end]), Vf=$(Vf_aux[end]), V_mag=$(V_terminal_magnitude_aux[end]), V_mag_machine=$(V_mag_machine_aux[end]), I_mag_machine=$(I_mag_machine_aux[end]), S_terminal_machine=$(S_terminal_machine_aux[end]), S_terminal_network=$(S_terminal_network_aux[end])")
+        if abs(t - round(t)) < 0.000001
+            println("t=$t")
+            #println("t=$t: omega=$(ω_aux[end]), τm=$(τm_aux[end]), Vf=$(Vf_aux[end]), V_mag=$(V_terminal_magnitude_aux[end]), V_mag_machine=$(V_mag_machine_aux[end]), I_mag_machine=$(I_mag_machine_aux[end]), S_terminal_machine=$(S_terminal_machine_aux[end]), S_terminal_network=$(S_terminal_network_aux[end])")
+            println("Machine States: δ=$(machine_states_f64[1]), ω=$(machine_states_f64[2]), EQ_P=$(machine_states_f64[3]), ED_P=$(machine_states_f64[4]), PSI_D_PP=$(machine_states_f64[5]), PSI_Q_PP=$(machine_states_f64[6])")
+            println("AVR States: VF=$(avr_states_f64[1]), VT=$(avr_states_f64[2]), VLL=$(avr_states_f64[3]), VFB=$(avr_states_f64[4])")
+            println("Gov States: FV=$(gov_states_f64[1]), FF=$(gov_states_f64[2]), ET=$(gov_states_f64[3])")
+            #println("Network States: I_12_D=$(network_states_f64[1]), I_12_Q=$(network_states_f64[2]), I_13_D=$(network_states_f64[3]), I_13_Q=$(network_states_f64[4]), V_2_D=$(network_states_f64[9]), V_2_Q=$(network_states_f64[10]), I_B2_D=$(network_states_f64[19]), I_B2_Q=$(network_states_f64[20])")
         end
     end
 
@@ -258,7 +265,7 @@ function run_simulation(network_file)
     prob = ODEProblem(ode_system!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [4.5]               # Setting this far ahead for now – we can change this later
+    perturb_times = [10.0]               # Setting this far ahead for now – we can change this later
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -287,32 +294,66 @@ function run_simulation(network_file)
 
     # Process results
     t = sol.t
-    #voltage_magnitudes = fill(NaN, length(t))
-
-    # for (i, ti) in enumerate(t)
-    #     # Calculate voltage at each saved time point
-    #     if ti >= perturbation_params.start_time && ti <= perturbation_params.end_time
-    #         voltage_magnitudes[i] = V_mag * perturbation_params.fault_factor
-    #     else
-    #         voltage_magnitudes[i] = V_mag
-    #     end
-    # end
+    delta_values = [sol[machine_idx[1], i] for i in 1:length(t)]
+    omega_values = [sol[machine_idx[2], i] for i in 1:length(t)]
+    Vf_values = [sol[avr_idx[1], i] for i in 1:length(t)]
 
     # Create plots - Just as an example, 90% of them are not needed
-    p1 = plot(t, [sol[machine_idx[3], i] for i in 1:length(t)], label="eq'", title="Machine Fluxes")
-    plot!(p1, t, [sol[machine_idx[4], i] for i in 1:length(t)], label="ed'")
-    savefig(p1, "fluxes.png")
-    p2 = plot(t, [sol[avr_idx[1], i] for i in 1:length(t)], label="Field Voltage", title="AVR")
-    savefig(p2, "vf.png")
-    #p3 = plot(t, [sol[gov_idx[2], i] for i in 1:length(t)], label="Mechanical Power", title="Governor")
-    p3 = plot(t, [sol[network_idx[9], i] for i in 1:length(t)], title="Terminal Voltage (Machine DQ)", label="Vd", linewidth=2)
-    plot!(p3, t, [sol[network_idx[10], i] for i in 1:length(t)], label="Vq", linewidth=2)
-    savefig(p3, "vt.png")
+    # Plot shaft states
+    p1 = plot(t, delta_values,
+        label="Rotor angle (δ)", title="Machine States", linewidth=2)
+    plot!(p1, t, omega_values,
+        label="Rotor speed (ω)", linewidth=2)
+    savefig(p1, "shaft_states.png")
 
-    # Combine plots
-    #combined_plot = plot(p1, p2, p3, layout=(3, 1), size=(800, 1200))
-    #display(combined_plot)
-    #savefig(combined_plot, "haha.png")
+    # Plot fluxes
+    p2 = plot(t, [sol[machine_idx[3], i] for i in 1:length(t)],
+        label="eq'", title="Machine Fluxes", linewidth=2)
+    plot!(p2, t, [sol[machine_idx[4], i] for i in 1:length(t)],
+        label="ed'", linewidth=2)
+    plot!(p2, t, [sol[machine_idx[5], i] for i in 1:length(t)],
+        label="ψd''", linewidth=2)
+    plot!(p2, t, [sol[machine_idx[6], i] for i in 1:length(t)],
+        label="ψq''", linewidth=2)
+    savefig(p2, "fluxes.png")
+
+    # Plot avr states
+    p3 = plot(t, Vf_values,
+        label="Field Voltage", title="AVR States", linewidth=2)
+    plot!(p3, t, [sol[avr_idx[2], i] for i in 1:length(t)],
+        label="Terminal Voltage", linewidth=2)
+    plot!(p3, t, [sol[avr_idx[3], i] for i in 1:length(t)],
+        label="Lead-Lag State", linewidth=2)
+    plot!(p3, t, [sol[avr_idx[4], i] for i in 1:length(t)],
+        label="Feedback State", linewidth=2)
+    savefig(p3, "avr_states.png")
+
+    # Plot governor states
+    p4 = plot(t, [sol[gov_idx[1], i] for i in 1:length(t)],
+        label="Fuel Value", title="Governor States", linewidth=2)
+    plot!(p4, t, [sol[gov_idx[2], i] for i in 1:length(t)],
+        label="Fuel Flow", linewidth=2)
+    plot!(p4, t, [sol[gov_idx[3], i] for i in 1:length(t)],
+        label="Exhaust Temp", linewidth=2)
+    savefig(p4, "gov_states.png")
+
+    # Plot torques
+    p5 = plot(t_aux, τm_aux,
+        label="Mechanical Torque", title="Machine Torques", linewidth=2)
+    savefig(p5, "torque.png")
+
+    # Plot voltages
+    p6 = plot(t_aux, V_terminal_magnitude_aux, label="Terminal Voltage Magnitude", title="Voltages", linewidth=2)
+    plot!(p6, t_aux, Vf_aux, label="Field Voltage", linewidth=2)
+    savefig(p6, "voltages.png")
+
+    # Plot powers
+    p7 = plot(t_aux, real(S_terminal_machine_aux), label="P", title="Power Injections at Machine Bus", linewidth=2)
+    plot!(p7, t_aux, imag(S_terminal_machine_aux), label="Q", linewidth=2)
+    savefig(p7, "power.png")
+
+    # p_combined = plot(p1, p2, p3, p4, p5, p6, p7, layout=(7, 1), size=(1000, 2400))
+    # savefig(p_combined, "machine_avr_governor_results.png")
 
     return sol
 end
