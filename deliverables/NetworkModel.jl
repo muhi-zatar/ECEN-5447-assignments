@@ -32,8 +32,8 @@ const I_3_Q_IDX = 16
 # not all of them are used.
 
 function sanity_check(test_value, true_value, calculation_under_test::String)
-    difference = norm.(test_value .- true_value, Inf)
-    if (difference .> 1e-6)
+    difference = norm(test_value .- true_value, Inf)
+    if (difference > 1e-6)
         throw("$calculation_under_test calculation is probably wrong. Difference between calculated and expected: $difference")
     else
         println("$calculation_under_test calculation looks good. Difference between calculated and expected: $difference")
@@ -131,7 +131,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
 
     # Sanity check
     V_test = V_dq .* ℯ .^ (-im * π / 2)
-    #sanity_check(V_test, V_terminal, "DQ voltage")
+    sanity_check(V_test, V_terminal, "DQ voltage")
 
     # Find complex current
     I_dq = conj(S ./ V_dq)            # Complex bus current injections in network DQ reference frame
@@ -146,7 +146,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     P_test = (v_d .* i_d) .+ (v_q .* i_q)
     Q_test = (v_q .* i_d) .- (v_d .* i_q)
     S_test = complex.(P_test, Q_test)
-    #sanity_check(S_test, S, "DQ current")
+    sanity_check(S_test, S, "DQ current")
 
     # Find load impedance
     Z_dq = (abs.(V_dq) .^ 2) ./ conj.(S)
@@ -213,7 +213,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     ]
     println("Norm of residuals: $(norm(res_i, Inf))")
 
-    #sanity_check(res_i, zeros(6), "Line current")
+    sanity_check(res_i, zeros(6), "Line current")
 
     # # Populate mass matrix
     # M_diagonal = zeros(Float64, NUM_STATES)
