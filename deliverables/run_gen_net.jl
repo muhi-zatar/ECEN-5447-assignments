@@ -155,6 +155,14 @@ function run_machine_network(network_file)
         du[p.network_idx] .= du_network
         du[p.machine_idx] .= du_machine
 
+        #sanity_check(du, zeros(length(states)), "Derivatives", false)
+
+        # if (t > 4.98) & (t < 5.2)
+        #     if abs(t - round(t)) < 0.01
+        #         println("t=$t, Derivatives: $du")
+        #     end
+        # end
+
         if abs(t - round(t)) < 0.001
             println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
         end
@@ -163,11 +171,11 @@ function run_machine_network(network_file)
     # # Build function 
     # explicitDAE_M = ODEFunction(machine_network_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 20.0)
+    tspan = (0.0, 5.0)
     prob = ODEProblem(machine_network_dynamics!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [5.0]
+    perturb_times = [2.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
