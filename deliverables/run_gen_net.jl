@@ -138,8 +138,11 @@ function run_machine_network(network_file)
             params.network
         )
 
+        # These all throw errors when the system is perturbed, but checking S inside update_network_states! does not
+        # TODO: Check why
         #sanity_check(S_terminal_network, S_terminal_machine, "Machine vs. Network Power", false)
         #sanity_check(I_terminal_network, I_terminal_machine_pos, "Machine vs. Network Current", false)
+        #sanity_check(abs(V_terminal), V_mag, "Machine vs. Network Bus Voltage Magnitude", false)
 
         # Update auxiliary variables
         push!(V_terminal_aux, V_terminal)
@@ -175,7 +178,7 @@ function run_machine_network(network_file)
     function affect!(integrator)
         #### Uncomment the desired perturbation ####
         # Load Jump
-        integrator.p.network.Z_L *= 1.05
+        integrator.u[integrator.p.machine_idx[DELTA]] *= 0.95
 
         # Load Decrease
         #integrator.p.network.Z_L *= 1.15

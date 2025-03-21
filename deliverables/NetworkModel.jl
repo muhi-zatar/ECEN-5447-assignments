@@ -323,6 +323,7 @@ function update_network_states!(
     P_terminal = v_2_d * i_2_d + v_2_q * i_2_q
     Q_terminal = v_2_q * i_2_d - v_2_d * i_2_q
     S_terminal = complex(P_terminal, Q_terminal)
+    sanity_check(S_terminal, S_bus, "Machine vs. Network Power", false)
 
     # Compute positive sequence terminal voltage to return (Milano Eigenvalue Problems Eq 1.43)
     V_terminal = (v_2_d + im * v_2_q) * exp(-im * π / 2)
