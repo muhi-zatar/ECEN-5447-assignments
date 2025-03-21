@@ -2,7 +2,7 @@
 module NetworkModel
 
 # Exporing the functions
-export ThreeBusNetwork, initialize_network, update_network_states!, BUS_MACHINE_MODEL
+export ThreeBusNetwork, initialize_network, update_network_states!, BUS_MACHINE_MODEL, sanity_check
 
 using LinearAlgebra
 
@@ -31,12 +31,14 @@ const I_3_Q_IDX = 16
 # Helper functions
 # not all of them are used.
 
-function sanity_check(test_value, true_value, calculation_under_test::String)
+function sanity_check(test_value, true_value, calculation_under_test::String, verbose=true)
     difference = norm(test_value .- true_value, Inf)
     if (difference > 1e-6)
         throw("$calculation_under_test calculation is probably wrong. Difference between calculated and expected: $difference")
     else
-        println("$calculation_under_test calculation looks good. Difference between calculated and expected: $difference")
+        if verbose
+            println("$calculation_under_test calculation looks good. Difference between calculated and expected: $difference")
+        end
     end
 end
 
@@ -117,7 +119,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     print("\n\nInitial positive sequence voltage at the bus: $(V_m[BUS_MACHINE_MODEL]) ∠ $(rad2deg(θ[BUS_MACHINE_MODEL]))\n\n")
 
     # Construct initial current to pass forward
-    I_RI = S ./ conj.(V_terminal)
+    I_RI = conj.(S ./ V_terminal)
     I_2_RI = I_RI[BUS_MACHINE_MODEL]
     I_2_m = abs(I_2_RI)
     I_2_ang = angle(I_2_RI)
@@ -137,6 +139,8 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     I_dq = conj(S ./ V_dq)            # Complex bus current injections in network DQ reference frame
     i_d = real(I_dq)                  # Direct-axis component of bus current injections
     i_q = imag(I_dq)                  # Quadrature-axis component of bus current injections
+    I_test = I_dq .* ℯ .^ (-im * π / 2)
+    sanity_check(I_test, I_RI, "DQ Current")
 
     # Bus 2 (our model) injection current in network reference frame
     i_2_d = i_d[BUS_MACHINE_MODEL]
@@ -146,7 +150,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     P_test = (v_d .* i_d) .+ (v_q .* i_q)
     Q_test = (v_q .* i_d) .- (v_d .* i_q)
     S_test = complex.(P_test, Q_test)
-    sanity_check(S_test, S, "DQ current")
+    sanity_check(S_test, S, "Power")
 
     # Find load impedance
     Z_dq = (abs.(V_dq) .^ 2) ./ conj.(S)
@@ -184,7 +188,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     # Line Currents
     A = [network.R_12 -1*network.X_12 0 0 0 0;
         network.X_12 network.R_12 0 0 0 0;
-        0 0 network.R_12 -1*network.X_13 0 0;
+        0 0 network.R_13 -1*network.X_13 0 0;
         0 0 network.X_13 network.R_13 0 0;
         0 0 0 0 network.R_23 -1*network.X_23;
         0 0 0 0 network.X_23 network.R_23]
@@ -211,7 +215,6 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
         states[I_3_D_IDX] + states[I_23_D_IDX] + states[I_13_D_IDX] - i_b3_d;
         states[I_3_Q_IDX] + states[I_23_Q_IDX] + states[I_13_Q_IDX] - i_b3_q
     ]
-    println("Norm of residuals: $(norm(res_i, Inf))")
 
     sanity_check(res_i, zeros(6), "Line current")
 
@@ -237,7 +240,7 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     # network.M = M_diagonal
 
     # Return initial states
-    return states
+    return states, i_2_d, i_2_q
 end
 
 function update_network_states!(
@@ -326,8 +329,10 @@ function update_network_states!(
 
     # Compute positive sequence terminal injected current to return (can check this against Milano Eigenvalue Problems Eq 1.41)
     I_terminal = conj(S_terminal / V_terminal)
+    I_terminal_test = (i_2_d + im * i_2_q) * exp(-im * π / 2)
+    sanity_check(I_terminal_test, I_terminal, "Bus 2 Current Injection", false)
 
     # Return all values (used for debugging – we can return fewer values after we figure out what's wrong)
-    return V_terminal, S_terminal, I_terminal
+    return V_terminal, S_terminal, I_terminal, i_2_d, i_2_q
 end
 end # module

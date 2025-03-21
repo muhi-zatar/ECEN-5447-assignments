@@ -34,7 +34,6 @@ end
 
 function run_machine_network(network_file)
     V_sol, θ_sol, P_sol, Q_sol = get_powerflow_results(network_file)
-
     V_mag = V_sol[BUS_MACHINE_MODEL]
     V_angle = θ_sol[BUS_MACHINE_MODEL]
     P = P_sol[BUS_MACHINE_MODEL]
@@ -53,7 +52,7 @@ function run_machine_network(network_file)
         system_base_frequency=60.0
     )
 
-    network_states = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
+    network_states, i_2_d_init, i_2_q_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
 
     println("\nInitial States:")
@@ -100,8 +99,14 @@ function run_machine_network(network_file)
     # Define auxiliary variabls
     V_terminal_aux = Complex{Float64}[]
     S_terminal_aux = Complex{Float64}[]
+    t_aux = Float64[]
+    i_2_d_aux = Float64[]
+    i_2_q_aux = Float64[]
     push!(V_terminal_aux, V_terminal)
     push!(S_terminal_aux, complex(P, Q))
+    push!(t_aux, 0.0)
+    push!(i_2_d_aux, i_2_d_init)
+    push!(i_2_q_aux, i_2_q_init)
 
     function machine_network_dynamics!(du, u, params, t)
         # Extract states for each component
@@ -126,16 +131,22 @@ function run_machine_network(network_file)
             params.machine
         )
 
-        V_terminal, _, _ = update_network_states!(
+        V_terminal, S_terminal_network, I_terminal_network, i_2_d, i_2_q = update_network_states!(
             network_states_f64,
             du_network,
             S_terminal_aux[end],
             params.network
         )
 
+        #sanity_check(S_terminal_network, S_terminal_machine, "Machine vs. Network Power", false)
+        #sanity_check(I_terminal_network, I_terminal_machine_pos, "Machine vs. Network Current", false)
+
         # Update auxiliary variables
         push!(V_terminal_aux, V_terminal)
         push!(S_terminal_aux, S_terminal_machine)
+        push!(t_aux, t)
+        push!(i_2_d_aux, i_2_d)
+        push!(i_2_q_aux, i_2_q)
 
         # Copy derivatives to output
         du[p.network_idx] .= du_network
@@ -149,7 +160,7 @@ function run_machine_network(network_file)
     # # Build function 
     # explicitDAE_M = ODEFunction(machine_network_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 30.0)
+    tspan = (0.0, 20.0)
     prob = ODEProblem(machine_network_dynamics!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
@@ -200,8 +211,11 @@ function run_machine_network(network_file)
         title="Terminal Voltage (Machine Bus)", label="Vd", linewidth=2)
     plot!(p3, t, [sol[network_idx[10], i] for i in 1:length(t)],
         label="Vq", linewidth=2)
-
-    p_combined = plot(p1, p2, p3, layout=(3, 1), size=(1000, 1600))
+    p4 = plot(sol, idxs=(0, [7, 8, 9, 10, 11, 12]), title="Network Bus Voltages", labels=["V_1_D" "V_1_Q" "V_2_D" "V_2_Q" "V_3_D" "V_3_Q"])
+    p5 = plot(sol, idxs=(0, [13, 14, 15, 16]), title="Network Bus Current Injections", labels=["I_1_D" "I_1_Q" "I_3_D" "I_3_Q"])
+    plot!(p5, t_aux, i_2_d_aux, label="I_2_D")
+    plot!(p5, t_aux, i_2_q_aux, label="I_2_Q")
+    p_combined = plot(p1, p2, p3, p4, p5, layout=(5, 1), size=(1200, 2000))
     savefig(p_combined, "machine_network_results.png")
 
     return sol
