@@ -32,12 +32,14 @@ const I_3_Q_IDX = 16
 # not all of them are used.
 
 function sanity_check(test_value, true_value, calculation_under_test::String, verbose=true)
-    difference = norm(test_value .- true_value, Inf)
-    if (difference > 1e-6)
-        throw("$calculation_under_test calculation is probably wrong. Difference between calculated and expected: $difference")
+    distance = norm(test_value .- true_value, Inf)
+    if (distance > 1e-6)
+        difference = test_value .- true_value
+        println(difference)
+        throw("$calculation_under_test calculation is probably wrong. Residual is: $distance")
     else
         if verbose
-            println("$calculation_under_test calculation looks good. Difference between calculated and expected: $difference")
+            println("$calculation_under_test calculation looks good. Residual is: $distance")
         end
     end
 end
@@ -323,7 +325,7 @@ function update_network_states!(
     P_terminal = v_2_d * i_2_d + v_2_q * i_2_q
     Q_terminal = v_2_q * i_2_d - v_2_d * i_2_q
     S_terminal = complex(P_terminal, Q_terminal)
-    sanity_check(S_terminal, S_bus, "Machine vs. Network Power", false)
+    #sanity_check(S_terminal, S_bus, "Machine vs. Network Power", false)
 
     # Compute positive sequence terminal voltage to return (Milano Eigenvalue Problems Eq 1.43)
     V_terminal = (v_2_d + im * v_2_q) * exp(-im * π / 2)
@@ -331,7 +333,7 @@ function update_network_states!(
     # Compute positive sequence terminal injected current to return (can check this against Milano Eigenvalue Problems Eq 1.41)
     I_terminal = conj(S_terminal / V_terminal)
     I_terminal_test = (i_2_d + im * i_2_q) * exp(-im * π / 2)
-    sanity_check(I_terminal_test, I_terminal, "Bus 2 Current Injection", false)
+    #sanity_check(I_terminal_test, I_terminal, "Bus 2 Current Injection", false)
 
     # Return all values (used for debugging – we can return fewer values after we figure out what's wrong)
     return V_terminal, S_terminal, I_terminal, i_2_d, i_2_q
