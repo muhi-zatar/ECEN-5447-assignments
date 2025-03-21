@@ -94,7 +94,7 @@ function run_simulation(network_file)
     )
 
     # Initialize states
-    network_states = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
+    network_states, i_2_d_init, i_2_q_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
     avr_states = initialize_avr(avr, V_mag, Vf_init)  # Assume zero field current initially, is that right?
     ω_init = 1.0
@@ -209,13 +209,13 @@ function run_simulation(network_file)
         du_gov = zeros(Float64, length(p.gov_idx))
 
         # Update the states of each component
-        update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_aux[end], avr)
+        efd = update_avr_states!(avr_states_f64, du_avr, V_terminal_magnitude_aux[end], avr)
 
         τ_m = update_gov_states!(gov_states_f64, du_gov, ω_aux[end], governor)
 
         I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(machine_states_f64, du_machine, V_terminal_aux[end], Vf_aux[end], τm_aux[end], machine)
 
-        V_terminal_network_pos, S_terminal_network, I_terminal_network_pos = update_network_states!(network_states_f64, du_network, S_terminal_machine_aux[end], network)
+        V_terminal_network_pos, S_terminal_network, I_terminal_network_pos, i_2_d, i_2_q = update_network_states!(network_states_f64, du_network, S_terminal_machine_aux[end], network)
 
         # Update global/auxiliary variables to prepare for the next step
         # Machine bus voltage magnitude: Used by AVR, returned by network
@@ -228,7 +228,7 @@ function run_simulation(network_file)
         push!(V_terminal_aux, V_terminal_network_pos)
 
         # Field voltage: Used by machine, returned by AVR
-        push!(Vf_aux, avr_states_f64[1])
+        push!(Vf_aux, efd)
 
         # Mechanical torque: Used by machine, returned by governor
         push!(τm_aux, τ_m)
@@ -261,11 +261,11 @@ function run_simulation(network_file)
     end
 
     # Step 4: Set up and solve the ODE system
-    tspan = (0.0, 5.0)
+    tspan = (0.0, 10.0)
     prob = ODEProblem(ode_system!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [10.0]               # Setting this far ahead for now – we can change this later
+    perturb_times = [15.0]               # Setting this far ahead for now – we can change this later
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
