@@ -70,8 +70,8 @@ function run_machine_network(network_file)
     states = vcat(network_states, machine_states)
 
     # Define state 
-    network_idx = 1:16
-    machine_idx = 17:22
+    network_idx = 1:22
+    machine_idx = 23:28
 
     p = MachineNetworkParams(
         network,
@@ -82,19 +82,19 @@ function run_machine_network(network_file)
         machine_idx
     )
 
-    # M_system = zeros(Float64, length(states))
+    M_system = zeros(Float64, length(states))
 
-    # if isa(network.M, Vector)
-    #     M_system[network_idx] .= network.M
-    # else
-    #     for i in 1:length(network_idx)
-    #         M_system[network_idx[i]] = network.M[i, i]
-    #     end
-    # end
+    if isa(network.M, Vector)
+        M_system[network_idx] .= network.M
+    else
+        for i in 1:length(network_idx)
+            M_system[network_idx[i]] = network.M[i, i]
+        end
+    end
 
-    # M_system[machine_idx] .= 1.0
+    M_system[machine_idx] .= 1.0
 
-    # mass_matrix = Diagonal(M_system)
+    mass_matrix = Diagonal(M_system)
 
     # Define auxiliary variabls
     V_terminal_aux = Complex{Float64}[]
@@ -168,14 +168,14 @@ function run_machine_network(network_file)
         end
     end
 
-    # # Build function 
-    # explicitDAE_M = ODEFunction(machine_network_dynamics!, mass_matrix=mass_matrix)
+    # Build function 
+    explicitDAE_M = ODEFunction(machine_network_dynamics!, mass_matrix=mass_matrix)
 
     tspan = (0.0, 5.0)
-    prob = ODEProblem(machine_network_dynamics!, states, tspan, p)
+    prob = ODEProblem(explicitDAE_M, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [2.0]
+    perturb_times = [10.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -200,7 +200,8 @@ function run_machine_network(network_file)
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    #sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rosenbrock23(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 
