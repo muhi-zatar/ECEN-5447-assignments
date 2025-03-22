@@ -1,3 +1,9 @@
+cd(@__DIR__)
+using Pkg
+Pkg.activate("../.")
+Pkg.resolve() # make sure Manifest matches Project
+Pkg.instantiate() # install missing dependencies
+
 # Importing necessary Modules
 using PowerSystemCaseBuilder
 using PowerSimulationsDynamics
@@ -13,9 +19,35 @@ sys = build_system(PSIDTestSystems, "psid_test_threebus_multimachine_dynlines")
 
 # See which buses have generators
 gens = collect(get_components(ThermalStandard, sys))
-gen1 = gens[1]
-gen2 = gens[2]
+ref_gen = gens[2]
+machine_gen = gens[1]
 
+# Remove dynamic injectors (to prepare for replacement by our model)
+remove_component!(sys, get_dynamic_injector(ref_gen))
+remove_component!(sys, get_dynamic_injector(machine_gen))
+
+# Remove the ThermalStandard generator that's currently at the reference bus
+remove_component!(sys, ref_gen)
+
+### Add an infinite voltage source
+# Define the slack bus
+slack_bus = first(get_components(x -> get_bustype(x) == ACBusTypes.REF, Bus, sys))
+
+# Define an infinite source
+inf_source = Source(;
+    name="InfBus", #name
+    available=true, #availability
+    active_power=0.0,
+    reactive_power=0.0,
+    bus=slack_bus, #bus
+    R_th=0.0, #Rth
+    X_th=5e-6, #Xth
+);
+
+# Add the infinite source
+add_component!(sys, inf_source)
+
+### Add a dynamic generator
 
 # Define SauerPaiMachine parameters
 sp_machine = SauerPaiMachine(
@@ -46,70 +78,70 @@ sp_machine = SauerPaiMachine(
 )
 
 # Define Shaft with single mass
-shaft_model = SingleMass(    
-    H = 3.148,
-    D = 2.0,
-    )
+shaft_model = SingleMass(
+    H=3.148,
+    D=2.0,
+)
 
-# Degine GasTG governer
+# Define GasTG governer
 governor = GasTG(
     0.05,    # R
     0.2,     # T1
-    0.4,     # T2
-    0.04,    # T3
+    0.2,     # T2
+    2.0,    # T3
     1.0,     # AT
-    2.0,     # Kt
-    (0.0, 6.0), # Vlim
+    2.5,     # Kt
+    (0.01, 1.1), # Vlim
     0.0    # D_turb
 )
 
 # Define EXST1 AVR
 exciter = PSY.EXST1(
-    0.001, # Tr
-    (0.0, 6.0), # Vi_lim
-    400.0, # Tc
-    0.02, # Tb
-    200, # Ka
-    0.8, # Ta
-    (-6.0, 6.0), # Vr_limit
+    0.01, # Tr
+    (-5.0, 5.0), # Vi_lim
+    10.0, # Tc
+    20.0, # Tb
+    200.0, # Ka
+    0.1, # Ta
+    (0.0, 6.0), # Vr_limit
     0.0, # Kc
     0.0, # Kf
-    0.0, # Tf
+    0.1, # Tf
     1.0, # V_ref
 )
 
 # Define dynamic generator wrapper
 dg1 = DynamicGenerator(
-    name = "generator-101-1",
-    ω_ref = 1.0,
-    machine = sp_machine,
-    shaft = shaft_model,
-    avr = exciter,
-    prime_mover = governor,
+    name=get_name(machine_gen),
+    ω_ref=1.0,
+    machine=sp_machine,
+    shaft=shaft_model,
+    avr=exciter,
+    prime_mover=governor,
     # exciter = exciter,
-    pss = PSY.PSSFixed(V_pss = 0.0),
-    base_power = get_base_power(gen2),    
+    pss=PSY.PSSFixed(V_pss=0.0),
+    base_power=get_base_power(machine_gen),
     # InfrastructureSystems.InfrastructureSystemsInternal()
 )
 
-# Define Simulationtspan = (0.0, 30.0)
-try
-    sim = Simulation(
-        ResidualModel,
-        sys,
-        pwd(),
-        tspan
-    )
-catch e
-    println("Simulation error: ", e)
-    println(stacktrace(catch_backtrace()))
-end
+# Add our generator to the system
+add_component!(sys, dg1, machine_gen)
 
+
+### Run a Dynamic Simulation ###
+# Define Simulation
+tspan = (0.0, 30.0)
+sim = Simulation(
+    ResidualModel,
+    sys,
+    pwd(),
+    tspan
+)
 # execute the simulation
 execute!(
     sim, #simulation structure
     IDA(), #Sundials DAE Solver
-    dtmax = 0.02, #Maximum step size
-    )
+    dtmax=0.02, #Maximum step size
+)
 
 results = read_results(sim)
