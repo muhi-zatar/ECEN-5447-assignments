@@ -2,7 +2,7 @@
 module NetworkModel
 
 # Exporing the functions
-export ThreeBusNetwork, initialize_network, update_network_states!, BUS_MACHINE_MODEL, sanity_check
+export ThreeBusNetwork, initialize_network, update_network_states!, BUS_MACHINE_MODEL, SanityCheckError, sanity_check
 
 using LinearAlgebra
 
@@ -37,12 +37,16 @@ const I_B3_Q_IDX = 22
 # Helper functions
 # not all of them are used.
 
+struct SanityCheckError <: Exception
+    msg::String
+end
+
 function sanity_check(test_value, true_value, calculation_under_test::String, verbose=true)
     distance = norm(test_value .- true_value, Inf)
     if (distance > 1e-6)
         difference = test_value .- true_value
         println(difference)
-        throw("$calculation_under_test calculation is probably wrong. Residual is: $distance")
+        throw(SanityCheckError("$calculation_under_test calculation is probably wrong. Residual is: $distance"))
     else
         if verbose
             println("$calculation_under_test calculation looks good. Residual is: $distance")
@@ -93,7 +97,7 @@ mutable struct ThreeBusNetwork
         E_IB_D=0.0,                               # To be filled in from power flow solution
         E_IB_Q=0.0,                               # To be filled in from power flow solution
         Z_L=0.0 + im * 0.0,                       # To be filled in from power flow solution
-        M=zeros(Float64, NUM_STATES, NUM_STATES)  # To be filled in during initialization
+        M=zeros(Float64, NUM_STATES)              # To be filled in during initialization
     )
         return new(R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, X_IB, E_IB_D, E_IB_Q, Z_L, M)
     end # constructor function
@@ -162,23 +166,23 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     sanity_check(S_test, S, "Power")
 
     # Find load impedance
-    # S_load = S[BUS_LOAD] # Switch to load convention
-    # println("S_load = $S_load")
-    # V_load = V_terminal[BUS_LOAD]
-    # println("V_load = $V_load")
-    # I_load = conj(S_load / V_load)
-    # println("I_load = $I_load")
-    # Z_load = (abs(V_load)^2) / conj(S_load)
-    # println("Z_load = $Z_load")
-    # network.Z_L = Z_load             # The load is at the third bus
+    S_load = S[BUS_LOAD]
+    println("S_load = $S_load")
+    V_load = V_terminal[BUS_LOAD]
+    println("V_load = $V_load")
+    I_load = conj(S_load / V_load)
+    println("I_load = $I_load")
+    Z_load = (abs(V_load)^2) / conj(S_load)
+    println("Z_load = $Z_load")
+    network.Z_L = Z_load             # The load is at the third bus
 
-    A_test = [-1*i_d[3] i_q[3];
-        -1*i_q[3] -1*i_d[3]]
-    b_test = [v_d[3]; v_q[3]]
-    sol_test = A_test \ b_test
-    Z_test = complex(sol_test[1], sol_test[2])
-    network.Z_L = Z_test
-    println("Z_test = $Z_test")
+    # A_test = [-1*i_d[3] i_q[3];
+    #     -1*i_q[3] -1*i_d[3]]
+    # b_test = [v_d[3]; v_q[3]]
+    # sol_test = A_test \ b_test
+    # Z_test = complex(sol_test[1], sol_test[2])
+    # network.Z_L = Z_test
+    # println("Z_test = $Z_test")
     #sanity_check(Z_test, Z_load, "Load Impedance with Derivative Initialization")
 
     # Define state vector elements (Assume steady-state)
@@ -339,8 +343,8 @@ function update_network_states!(
     derivatives[I_1_D_IDX] = ((network.E_IB_D - v_1_d) + network.X_IB * i_1_q)                                  # d/dt (i_1_d) != 0
     derivatives[I_1_Q_IDX] = ((network.E_IB_Q - v_1_q) - network.X_IB * i_1_d)                                  # d/dt (i_1_q) != 0
     # Bus 3 (Load) (differential) –– From Milano's Eigenvalue Problems book, Eq. 1.48
-    derivatives[I_3_D_IDX] = (-v_3_d - R_load * i_3_d + X_load * i_3_q)                                          # d/dt (i_3_d) != 0
-    derivatives[I_3_Q_IDX] = (-v_3_q - R_load * i_3_q - X_load * i_3_d)                                          # d/dt (i_3_q) != 0
+    derivatives[I_3_D_IDX] = (v_3_d - R_load * i_3_d + X_load * i_3_q)                                          # d/dt (i_3_d) != 0
+    derivatives[I_3_Q_IDX] = (v_3_q - R_load * i_3_q - X_load * i_3_d)                                          # d/dt (i_3_q) != 0
 
     # Shunt currents (algebraic)
     # Bus 1

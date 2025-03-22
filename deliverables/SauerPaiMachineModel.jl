@@ -51,6 +51,7 @@ mutable struct SauerPaiMachine
     system_base_frequency::Float64
     H::Float64 # Rearragned for tideness
     D::Float64 # REarranged for tindeness
+    M::AbstractArray{Float64} # Mass Matrix coefficients
 
     # Constructor with default values
     function SauerPaiMachine(;
@@ -70,17 +71,18 @@ mutable struct SauerPaiMachine
         γ_q1=(Xq_pp - Xl) / (Xq_p - Xl), # Removed "machine" as the object is not yet created.
         γ_d2=(1 - γ_d1) / (Xd_p - Xl), # Removed "machine" as the object is not yet created.
         γ_q2=(1 - γ_q1) / (Xq_p - Xl), # Removed "machine" as the object is not yet created.
-        H=3.148,
-        D=2.0,
         base_power=100.0,
         system_base_power=100.0,
-        system_base_frequency=60.0
+        system_base_frequency=60.0,
+        H=3.148,
+        D=2.0,
+        M=zeros(Float64, 6)
     )
 
         return new(R, X_d, X_q, Xd_p, Xq_p, Xd_pp, Xq_pp, Xl,
             Td0_p, Tq0_p, Td0_pp, Tq0_pp,
             γ_d1, γ_q1, γ_d2, γ_q2, base_power,
-            system_base_power, system_base_frequency, H, D)
+            system_base_power, system_base_frequency, H, D, M)
     end
 end
 
@@ -163,6 +165,14 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     states[PSI_D_PP] = ψd_pp
     states[PSI_Q_PP] = ψq_pp
 
+    # Populate mass matrix values (from Milano Eq. 15.5 and 15.13)
+    machine.M[DELTA] = 1.0
+    machine.M[OMEGA] = 2 * machine.H
+    machine.M[EQ_P] = machine.Td0_p
+    machine.M[ED_P] = machine.Tq0_p
+    machine.M[PSI_D_PP] = machine.Td0_pp
+    machine.M[PSI_Q_PP] = machine.Tq0_pp
+
     # Return initial states and field voltage
     return states, Vf, τ_m
 end
@@ -224,28 +234,28 @@ function update_machine_states!(
     derivatives[DELTA] = 2.0 * π * f0 * (ω - ω_sys)
 
     # Speed derivative
-    derivatives[OMEGA] = 1.0 / (2.0 * machine.H) * (
+    derivatives[OMEGA] = (
         τ_m - τ_e - (machine.D * (ω - 1.0))
     )
 
 
     # flux equations (15.13 in Milano's book)
-    derivatives[EQ_P] = (1.0 / machine.Td0_p) * (
+    derivatives[EQ_P] = (
         -eq_p + Vf - (machine.X_d - machine.Xd_p) * (
             i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p
         )
     )
 
     # Also 15.13 in Milano's book
-    derivatives[ED_P] = (1.0 / machine.Tq0_p) * (
+    derivatives[ED_P] = (
         -ed_p + (machine.X_q - machine.Xq_p) * (
             i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_q2 * ed_p
         )
     )
 
     # Subtransient flux derivatives
-    derivatives[PSI_D_PP] = (1.0 / machine.Td0_pp) * (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
-    derivatives[PSI_Q_PP] = (1.0 / machine.Tq0_pp) * (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
+    derivatives[PSI_D_PP] = (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
+    derivatives[PSI_Q_PP] = (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
 
     # Calculate power at the bus to return
     p_bus = v_d * i_d + v_q * i_q       # Milano Eq. 15.2

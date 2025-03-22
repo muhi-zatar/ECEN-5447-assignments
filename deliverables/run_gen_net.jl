@@ -22,6 +22,28 @@ const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
+const I_12_D_IDX = 1
+const I_12_Q_IDX = 2
+const I_13_D_IDX = 3
+const I_13_Q_IDX = 4
+const I_23_D_IDX = 5
+const I_23_Q_IDX = 6
+const V_1_D_IDX = 7
+const V_1_Q_IDX = 8
+const V_2_D_IDX = 9
+const V_2_Q_IDX = 10
+const V_3_D_IDX = 11
+const V_3_Q_IDX = 12
+const I_1_D_IDX = 13
+const I_1_Q_IDX = 14
+const I_3_D_IDX = 15
+const I_3_Q_IDX = 16
+const I_B1_D_IDX = 17
+const I_B1_Q_IDX = 18
+const I_B2_D_IDX = 19
+const I_B2_Q_IDX = 20
+const I_B3_D_IDX = 21
+const I_B3_Q_IDX = 22
 
 mutable struct MachineNetworkParams
     network::ThreeBusNetwork
@@ -41,8 +63,8 @@ function run_machine_network(network_file)
 
     V_terminal = V_mag * exp(im * V_angle)
     println("Initial power flow results:")
-    println("V_terminal = $V_mag p.u ∠ $V_angle rad")
-    println("P = $P pu, Q = $Q pu")
+    println("V_terminal = $V_sol p.u ∠ $θ_sol rad")
+    println("P = $P_sol pu, Q = $Q_sol pu")
 
     network = ThreeBusNetwork()
 
@@ -55,6 +77,15 @@ function run_machine_network(network_file)
     network_states, i_2_d_init, i_2_q_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
 
+    # For debugging
+    V_terminal_init = (network_states[V_2_D_IDX] + im * network_states[V_2_Q_IDX]) * exp(-im * π / 2)
+    P_terminal_init = network_states[V_2_D_IDX] * i_2_d_init + network_states[V_2_Q_IDX] * i_2_q_init
+    Q_terminal_init = network_states[V_2_Q_IDX] * i_2_d_init - network_states[V_2_D_IDX] * i_2_q_init
+    S_terminal_init = complex(P_terminal_init, Q_terminal_init)
+    S_terminal = complex(P, Q) # From PF
+    sanity_check(V_terminal_init, V_terminal, "Initial quasi-static voltage")
+    sanity_check(S_terminal_init, S_terminal, "Initial apparent power")
+
     println("\nInitial States:")
     println("Machine states:")
     println("  Delta (rotor angle): $(machine_states[DELTA])")
@@ -66,6 +97,33 @@ function run_machine_network(network_file)
 
     println("Initial field voltage (Vf): $Vf_init")
     println("Initial mechanical torque (τm): $τ_m_init")
+
+    println("Network states:")
+    println("  I_12_D: $(network_states[I_12_D_IDX])")
+    println("  I_12_Q: $(network_states[I_12_Q_IDX])")
+    println("  I_13_D: $(network_states[I_13_D_IDX])")
+    println("  I_13_Q: $(network_states[I_13_Q_IDX])")
+    println("  I_23_D: $(network_states[I_23_D_IDX])")
+    println("  I_23_Q: $(network_states[I_23_Q_IDX])")
+    println("  V_1_D: $(network_states[V_1_D_IDX])")
+    println("  V_1_Q: $(network_states[V_1_Q_IDX])")
+    println("  V_2_D: $(network_states[V_2_D_IDX])")
+    println("  V_2_Q: $(network_states[V_2_Q_IDX])")
+    println("  V_3_D: $(network_states[V_3_D_IDX])")
+    println("  V_3_Q: $(network_states[V_3_Q_IDX])")
+    println("  I_1_D: $(network_states[I_1_D_IDX])")
+    println("  I_1_Q: $(network_states[I_1_Q_IDX])")
+    println("  I_3_D: $(network_states[I_3_D_IDX])")
+    println("  I_3_Q: $(network_states[I_3_Q_IDX])")
+    println("  I_B1_D: $(network_states[I_B1_D_IDX])")
+    println("  I_B1_Q: $(network_states[I_B1_Q_IDX])")
+    println("  I_B2_D: $(network_states[I_B2_D_IDX])")
+    println("  I_B2_Q: $(network_states[I_B2_Q_IDX])")
+    println("  I_B3_D: $(network_states[I_B3_D_IDX])")
+    println("  I_B3_Q: $(network_states[I_B3_Q_IDX])")
+
+    println("Initial bus power (from PF): $(complex(P,Q))")
+    println("Initial bus power (calculated): $(S_terminal_init)")
 
     states = vcat(network_states, machine_states)
 
@@ -84,15 +142,10 @@ function run_machine_network(network_file)
 
     M_system = zeros(Float64, length(states))
 
-    if isa(network.M, Vector)
-        M_system[network_idx] .= network.M
-    else
-        for i in 1:length(network_idx)
-            M_system[network_idx[i]] = network.M[i, i]
-        end
-    end
+    M_system[network_idx] .= network.M
+    M_system[machine_idx] .= machine.M
 
-    M_system[machine_idx] .= 1.0
+    println("\nDerivative Coefficients: $M_system\n")       # For debugging
 
     mass_matrix = Diagonal(M_system)
 
@@ -113,38 +166,33 @@ function run_machine_network(network_file)
         network_states = u[params.network_idx]
         machine_states = u[params.machine_idx]
 
-        # Make copies of states for Float64 compatibility
-        network_states_f64 = convert.(Float64, network_states)
-        machine_states_f64 = convert.(Float64, machine_states)
-
         # Arrays for derivatives
         du_network = similar(network_states, length(params.network_idx))
         du_machine = similar(machine_states, length(params.machine_idx))
 
+        # Calculate terminal voltage from current states (to use in update_machine_states!)
+        v_2_d = network_states[V_2_D_IDX]
+        v_2_q = network_states[V_2_Q_IDX]
+        V_terminal = (v_2_d + im * v_2_q) * exp(-im * π / 2)
+
         # Update the states of each component
-        I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(
-            machine_states_f64,
+        _, S_terminal_machine, _, _, _ = update_machine_states!(
+            machine_states,
             du_machine,
-            V_terminal_aux[end],
+            V_terminal,
             params.Vf,
             params.τm,
             params.machine
         )
 
-        V_terminal, S_terminal_network, I_terminal_network, i_2_d, i_2_q = update_network_states!(
-            network_states_f64,
+        _, _, _, i_2_d, i_2_q = update_network_states!(
+            network_states,
             du_network,
             S_terminal_aux[end],
             params.network
         )
 
-        # These all throw errors when the system is perturbed, but checking S inside update_network_states! does not
-        # TODO: Check why
-        #sanity_check(S_terminal_network, S_terminal_machine, "Machine vs. Network Power", false)
-        #sanity_check(I_terminal_network, I_terminal_machine_pos, "Machine vs. Network Current", false)
-        #sanity_check(abs(V_terminal), V_mag, "Machine vs. Network Bus Voltage Magnitude", false)
-
-        # Update auxiliary variables
+        # Update auxiliary variables (aux vars for plotting only!)
         push!(V_terminal_aux, V_terminal)
         push!(S_terminal_aux, S_terminal_machine)
         push!(t_aux, t)
@@ -155,27 +203,25 @@ function run_machine_network(network_file)
         du[p.network_idx] .= du_network
         du[p.machine_idx] .= du_machine
 
-        #sanity_check(du, zeros(length(states)), "Derivatives", false)
+        # Sanity check on derivatives
+        #sanity_check(du, zeros(length(du)), "Derivatives", false)
 
-        # if (t > 4.98) & (t < 5.2)
-        #     if abs(t - round(t)) < 0.01
-        #         println("t=$t, Derivatives: $du")
+        # if abs(t - round(t)) < 0.00001
+        #     #println("t=$t: δ=$(machine_states[DELTA]), ω=$(machine_states[OMEGA]), τm=$(params.τm), Vf=$(params.Vf), V_terminal=$V_terminal, S_terminal=$S_terminal_machine")
+        #     if ((t > 1.5) & (t < 2.5)) | (t < 0.5)
+        #         println("####\nt = $t\nu = $u\ndu = $du")
         #     end
         # end
-
-        if abs(t - round(t)) < 0.001
-            println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
-        end
     end
 
     # Build function 
     explicitDAE_M = ODEFunction(machine_network_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 5.0)
+    tspan = (0.0, 10.0)
     prob = ODEProblem(explicitDAE_M, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [10.0]
+    perturb_times = [20.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -200,11 +246,10 @@ function run_machine_network(network_file)
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    #sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
-    sol = solve(prob, Rosenbrock23(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5P(autodiff=false), saveat=0.01, callback=cb, tstops=perturb_times)
 
+    # Plotting
     t = sol.t
-
     p1 = plot(t, [sol[machine_idx[1], i] for i in 1:length(t)],
         label="Rotor angle (δ)", title="Machine States", linewidth=2)
     plot!(p1, t, [sol[machine_idx[2], i] for i in 1:length(t)],
