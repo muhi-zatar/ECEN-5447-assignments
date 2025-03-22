@@ -6,6 +6,7 @@ Pkg.activate("../.")
 # Importing the required libraries
 using DifferentialEquations
 using Plots
+using Plots.PlotMeasures
 using LinearAlgebra
 
 # Import machine, AVR and governor modules
@@ -39,7 +40,7 @@ const FF_IDX = 2
 const ET_IDX = 3
 
 # Define parameters for ODE solver
-struct MachinePlusControllersParams
+mutable struct MachinePlusControllersParams
     machine::SauerPaiMachine
     avr::EXST1
     governor::GasTG
@@ -127,49 +128,61 @@ function run_machine_avr_governor()
         gov_idx
     )
 
+    # Define auxiliary variables
+    τm_aux = Float64[]
+    Vf_aux = Float64[]
+    ω_aux = Float64[]
+    t_aux = Float64[]
+
+    # Pack aux variables with initial values
+    push!(τm_aux, τ_m_init)
+    push!(Vf_aux, Vf_init)
+    push!(ω_aux, ω_init)
+    push!(t_aux, 0.0)
+
     # Machine + AVR + Governor ODE function
     function machine_avr_gov_dynamics!(du, u, params, t)
         # Extract state variables
-        machine_states = @view u[params.machine_idx]
-        avr_states = @view u[params.avr_idx]
-        gov_states = @view u[params.gov_idx]
+        machine_states = u[params.machine_idx]
+        avr_states = u[params.avr_idx]
+        gov_states = u[params.gov_idx]
 
         # Prepare derivative containers
         du_machine = zeros(Float64, length(params.machine_idx))
         du_avr = zeros(Float64, length(params.avr_idx))
         du_gov = zeros(Float64, length(params.gov_idx))
 
-        # Step 1: Get current field voltage from AVR
-        Vf = avr_states[VF_IDX]
-
-        # Step 2: Get current rotor speed from machine
-        ω = machine_states[OMEGA]
-
-        # Step 3: Update governor with current rotor speed
+        # Step 1: Update governor with current rotor speed
         τm = update_gov_states!(
             gov_states,
             du_gov,
-            ω,
+            ω_aux[end],
             params.governor
         )
 
-        # Step 4: Update machine with current field voltage and mechanical torque
-        V_mag, I_RI, θ, ω_updated = update_machine_states!(
+        # Step 2: Update AVR with current terminal voltage magnitude
+        Vf = update_avr_states!(
+            avr_states,
+            du_avr,
+            abs(params.V_terminal),
+            params.avr
+        )
+
+        # Step 3: Update machine with current field voltage and mechanical torque
+        I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(
             machine_states,
             du_machine,
             params.V_terminal,
-            Vf,
-            τm,
+            Vf_aux[end],
+            τm_aux[end],
             params.machine
         )
 
-        # Step 5: Update AVR with current terminal voltage magnitude
-        update_avr_states!(
-            avr_states,
-            du_avr,
-            V_mag,
-            params.avr
-        )
+        # Update auxiliary variables
+        push!(τm_aux, τm)
+        push!(Vf_aux, Vf)
+        push!(ω_aux, ω_machine)
+        push!(t_aux, t)
 
         # Copy derivatives to output
         du[params.machine_idx] .= du_machine
@@ -177,36 +190,54 @@ function run_machine_avr_governor()
         du[params.gov_idx] .= du_gov
 
         # For debugging, print at integer time steps
-        if abs(t - round(t)) < 0.001
-            println("t=$t: δ=$(machine_states[DELTA]), ω=$ω, τm=$τm, Vf=$Vf, V_mag=$V_mag")
+        if abs(t - round(t)) < 0.0001
+            println("t=$t: δ=$(machine_states[DELTA]), ω=$(machine_states[OMEGA]), τm=$τm, Vf=$(avr_states[VF_IDX]), V_mag=$V_mag")
         end
     end
 
-    tspan = (0.0, 10.0)
+    tspan = (0.0, 30.0)
     prob = ODEProblem(machine_avr_gov_dynamics!, states, tspan, p)
 
-    sol = solve(prob, Tsit5(), reltol=1e-6, abstol=1e-6)
+    # Define the set of times to apply a perturbation
+    perturb_times = [5.0, 10.0, 15.0]
+
+    # Define the condition for which to apply a perturbation
+    function condition(u, t, integrator)
+        t in perturb_times
+    end
+
+    # Define the perturbation
+    function affect!(integrator)
+        #### Uncomment the desired perturbation ####
+        # Load Jump
+        #integrator.u[integrator.p.machine_idx[DELTA]] *= 0.85
+        if isapprox(integrator.t, 5.0)
+            integrator.u[integrator.p.machine_idx[DELTA]] *= 0.85
+        elseif isapprox(integrator.t, 10.0)
+            integrator.u[integrator.p.machine_idx[OMEGA]] *= 0.98
+        elseif isapprox(integrator.t, 15.0)
+            integrator.u[integrator.p.avr_idx[VF_IDX]] *= 0.90
+        end
+
+        # Load Decrease
+        #integrator.p.network.Z_L *= 1.15
+
+        # Line Trip
+        #integrator.p.network.R_12 = 1e6
+        #integrator.p.network.X_12 = 1e6
+    end
+
+    # Create a Callback function that represents the perturbation
+    cb = DiscreteCallback(condition, affect!)
+
+    # Run simulation
+    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 
     delta_values = [sol[machine_idx[DELTA], i] for i in 1:length(t)]
     omega_values = [sol[machine_idx[OMEGA], i] for i in 1:length(t)]
     Vf_values = [sol[avr_idx[VF_IDX], i] for i in 1:length(t)]
-
-    τm_values = []
-    τe_values = []
-
-    for i in 1:length(t)
-        τm = sol[gov_idx[FV_IDX], i]  # Fuel value is approximately mechanical torque
-        push!(τm_values, τm)
-
-        delta = sol[machine_idx[DELTA], i]
-        eq_p = sol[machine_idx[EQ_P], i]
-        ed_p = sol[machine_idx[ED_P], i]
-
-        τe = eq_p * sin(delta) - ed_p * cos(delta)
-        push!(τe_values, τe)
-    end
 
     # Plot machine states
     p1 = plot(t, delta_values,
@@ -243,12 +274,10 @@ function run_machine_avr_governor()
         label="Exhaust Temp", linewidth=2)
 
     # Plot torques
-    p5 = plot(t, τe_values,
-        label="Electrical Torque (approx)", title="Machine Torques", linewidth=2)
-    plot!(p5, t, τm_values,
+    p5 = plot(t_aux, τm_aux,
         label="Mechanical Torque", linewidth=2)
 
-    p_combined = plot(p1, p2, p3, p4, p5, layout=(5, 1), size=(800, 2000))
+    p_combined = plot(p1, p2, p3, p4, p5, layout=(5, 1), size=(800, 2000), left_margin=20mm)
     savefig(p_combined, "machine_avr_governor_results.png")
 
 
