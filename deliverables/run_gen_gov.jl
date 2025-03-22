@@ -88,6 +88,16 @@ function run_machine_governor()
         gov_idx
     )
 
+    M_system = zeros(Float64, length(states))
+
+    M_system[machine_idx] .= machine.M
+    M_system[gov_idx] .= 1.0
+
+
+    println("\nDerivative Coefficients: $M_system\n")       # For debugging
+
+    mass_matrix = Diagonal(M_system)
+
     # Define auxiliary variables
     τm_auxiliary = Float64[]
     ω_auxiliary = Float64[]
@@ -132,11 +142,13 @@ function run_machine_governor()
         end
     end
 
+    f = ODEFunction(machine_gov_dynamics!, mass_matrix=mass_matrix)
+
     tspan = (0.0, 20.0)
-    prob = ODEProblem(machine_gov_dynamics!, states, tspan, p)
+    prob = ODEProblem(f, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [2.5]               # Setting this far ahead for now – we can change this later
+    perturb_times = [25.0]               # Setting this far ahead for now – we can change this later
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -161,7 +173,7 @@ function run_machine_governor()
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5P(autodiff=false), saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 

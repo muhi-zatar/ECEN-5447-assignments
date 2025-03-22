@@ -89,6 +89,17 @@ function run_machine_avr()
         avr_idx
     )
 
+    # Define mass matrix for system
+    M_system = zeros(Float64, length(states))
+
+    M_system[machine_idx] .= machine.M
+    M_system[avr_idx] .= 1.0
+
+    println("\nDerivative Coefficients: $M_system\n")
+
+    mass_matrix = Diagonal(M_system)
+
+
     function machine_avr_dynamics!(du, u, params, t)
         machine_states = @view u[params.machine_idx]
         avr_states = @view u[params.avr_idx]
@@ -122,11 +133,13 @@ function run_machine_avr()
         end
     end
 
+    f = ODEFunction(machine_avr_dynamics!, mass_matrix=mass_matrix)
+
     tspan = (0.0, 20.0)
-    prob = ODEProblem(machine_avr_dynamics!, states, tspan, p)
+    prob = ODEProblem(f, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [2.5]               # Setting this far ahead for now – we can change this later
+    perturb_times = [25.0]               # Setting this far ahead for now – we can change this later
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -151,7 +164,7 @@ function run_machine_avr()
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5P(autodiff=false), saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 
