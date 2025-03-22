@@ -206,12 +206,9 @@ function run_machine_network(network_file)
         # Sanity check on derivatives
         #sanity_check(du, zeros(length(du)), "Derivatives", false)
 
-        # if abs(t - round(t)) < 0.00001
-        #     #println("t=$t: δ=$(machine_states[DELTA]), ω=$(machine_states[OMEGA]), τm=$(params.τm), Vf=$(params.Vf), V_terminal=$V_terminal, S_terminal=$S_terminal_machine")
-        #     if ((t > 1.5) & (t < 2.5)) | (t < 0.5)
-        #         println("####\nt = $t\nu = $u\ndu = $du")
-        #     end
-        # end
+        if abs(t - round(t)) < 0.00001
+            println("t=$t: δ=$(machine_states[DELTA]), ω=$(machine_states[OMEGA]), τm=$(params.τm), Vf=$(params.Vf), V_terminal=$V_terminal, S_terminal=$S_terminal_machine")
+        end
     end
 
     # Build function 
