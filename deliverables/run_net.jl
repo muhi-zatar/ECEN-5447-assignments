@@ -4,6 +4,7 @@ Pkg.activate("../.")
 
 using DifferentialEquations
 using Plots
+using Plots.PlotMeasures
 using LinearAlgebra
 #using Sundials
 
@@ -13,6 +14,28 @@ include("PowerFlowWrapper.jl")
 using .NetworkModel
 using .PowerFlowWrapper
 
+# Definining some constants
+const BUS_INFINITE_BUS = 1
+const BUS_MACHINE_MODEL = 2
+const BUS_LOAD = 3
+const NUM_STATES = 16
+const I_12_D_IDX = 1
+const I_12_Q_IDX = 2
+const I_13_D_IDX = 3
+const I_13_Q_IDX = 4
+const I_23_D_IDX = 5
+const I_23_Q_IDX = 6
+const V_1_D_IDX = 7
+const V_1_Q_IDX = 8
+const V_2_D_IDX = 9
+const V_2_Q_IDX = 10
+const V_3_D_IDX = 11
+const V_3_Q_IDX = 12
+const I_1_D_IDX = 13
+const I_1_Q_IDX = 14
+const I_3_D_IDX = 15
+const I_3_Q_IDX = 16
+
 
 mutable struct NetworkParams
     network::ThreeBusNetwork
@@ -21,6 +44,45 @@ mutable struct NetworkParams
     E_2_Q::Float64
     network_idx::UnitRange{Int64}
     bus_idx::UnitRange{Int64}
+end
+
+function verify_network_initialiation(states, i_2_d, i_2_q, pf_solution)
+    i_12_d = states[I_12_D_IDX]
+    i_12_q = states[I_12_Q_IDX]
+    i_13_d = states[I_13_D_IDX]
+    i_13_q = states[I_13_Q_IDX]
+    i_23_d = states[I_23_D_IDX]
+    i_23_q = states[I_23_Q_IDX]
+    v_1_d = states[V_1_D_IDX]
+    v_1_q = states[V_1_Q_IDX]
+    v_2_d = states[V_2_D_IDX]
+    v_2_q = states[V_2_Q_IDX]
+    v_3_d = states[V_3_D_IDX]
+    v_3_q = states[V_3_Q_IDX]
+    i_1_d = states[I_1_D_IDX]
+    i_1_q = states[I_1_Q_IDX]
+    i_3_d = states[I_3_D_IDX]
+    i_3_q = states[I_3_Q_IDX]
+
+    V_sol, θ_sol, P_sol, Q_sol = pf_solution
+
+    P_1 = (v_1_d .* i_1_d) .+ (v_1_q .* i_1_q)
+    Q_1 = (v_1_q .* i_1_d) .- (v_1_d .* i_1_q)
+    P_2 = (v_2_d .* i_2_d) .+ (v_2_q .* i_2_q)
+    Q_2 = (v_2_q .* i_2_d) .- (v_2_d .* i_2_q)
+    P_3 = (v_3_d .* i_3_d) .+ (v_3_q .* i_3_q)
+    Q_3 = (v_3_q .* i_3_d) .- (v_3_d .* i_3_q)
+
+    P_test = [P_1; P_2; P_3]
+    Q_test = [Q_1; Q_2; Q_3]
+
+    @show P_test
+    @show Q_test
+
+    sanity_check(P_test, P_sol, "P")
+    sanity_check(Q_test, Q_sol, "Q")
+
+    return
 end
 
 function run_machine_network(network_file)
@@ -40,6 +102,9 @@ function run_machine_network(network_file)
     network_states, i_2_d_init, i_2_q_init = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
     I_terminal_init = (i_2_d_init + im * i_2_q_init) * exp(-im * π / 2)
 
+    #### Sanity Check on Network Initialization ####
+    verify_network_initialiation(network_states, i_2_d_init, i_2_q_init, (V_sol, θ_sol, P_sol, Q_sol))
+
     states = vcat(network_states, i_2_d_init, i_2_q_init)
     network_idx = 1:16
     bus_idx = 17:18
@@ -56,20 +121,6 @@ function run_machine_network(network_file)
     # Calculate EMF behind reactance at Bus 2
     p.E_2_D = network_states[9] - i_2_q_init * p.network.X_IB
     p.E_2_Q = network_states[10] - i_2_d_init * p.network.X_IB
-
-    # M_system = zeros(Float64, length(states))
-
-    # if isa(network.M, Vector)
-    #     M_system[network_idx] .= network.M
-    # else
-    #     for i in 1:length(network_idx)
-    #         M_system[network_idx[i]] = network.M[i, i]
-    #     end
-    # end
-
-    # M_system[machine_idx] .= 1.0
-
-    # mass_matrix = Diagonal(M_system)
 
     # Define auxiliary variabls
     t_aux = Float64[]
@@ -92,6 +143,19 @@ function run_machine_network(network_file)
         du_network = similar(network_states, 16)
         du_bus_2 = similar(bus_2_states, 2)
 
+        # Calculate new complex power
+        v_2_d = network_states_f64[V_2_D_IDX]
+        v_2_q = network_states_f64[V_2_Q_IDX]
+        i_2_d = bus_2_states_f64[1]
+        i_2_q = bus_2_states_f64[2]
+        P_new = v_2_d * i_2_d + v_2_q * i_2_q
+        Q_new = v_2_q * i_2_d - v_2_d * i_2_q
+        S_new = complex(P_new, Q_new)
+
+        # Additional states to make Bus 2 an infinite bus
+        du_bus_2[p.network_idx[1]] = ((network.E_IB_D - network_states[p.network_idx[9]]) + network.X_IB * i_2_q) / network.X_IB
+        du_bus_2[p.network_idx[2]] = ((network.E_IB_Q - network_states[p.network_idx[10]]) - network.X_IB * i_2_d) / network.X_IB
+
         # Update the states
         V_terminal, S_terminal, I_terminal, i_2_d, i_2_q = update_network_states!(
             network_states_f64,
@@ -100,18 +164,14 @@ function run_machine_network(network_file)
             params.network
         )
 
-        # Additional states to make Bus 2 an infinite bus
-        du_bus_2[p.network_idx[1]] = ((network.E_IB_D - network_states[p.network_idx[9]]) + network.X_IB * i_2_q) / network.X_IB
-        du_bus_2[p.network_idx[2]] = ((network.E_IB_Q - network_states[p.network_idx[10]]) - network.X_IB * i_2_d) / network.X_IB
-
-
         # Sanity check
-        sanity_check(S_terminal, params.S_terminal, "Returned power", false)
+        #sanity_check(S_new, params.S_terminal, "Returned power", false)
 
         # Update auxiliary variables
         push!(t_aux, t)
         push!(V_terminal_aux, V_terminal)
-        push!(S_terminal_aux, S_terminal)
+        push!(S_terminal_aux, S_new)
+        # push!(S_terminal_aux, S_new)
         push!(I_terminal_aux, I_terminal)
 
         # Copy derivatives to output
@@ -126,7 +186,7 @@ function run_machine_network(network_file)
     # # Build function 
     # explicitDAE_M = ODEFunction(machine_network_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 10.0)
+    tspan = (0.0, 20.0)
     prob = ODEProblem(network_dynamics!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
@@ -167,7 +227,7 @@ function run_machine_network(network_file)
     plot!(twinx(), t_aux, rad2deg.(angle.(I_terminal_aux)), label="Bus 2 Angle", ylabel="Angle (degrees)", legend=:bottomleft, lw=2)
     p3 = plot(t_aux, real(S_terminal_aux), label="P", title="Bus Power Injection")
     plot!(p3, t_aux, imag(S_terminal_aux), label="Q")
-    p_combined = plot(p1, p2, p3, layout=(3, 1), size=(1200, 2000))
+    p_combined = plot(p1, p2, p3, layout=(3, 1), size=(1200, 2000), left_margin=50mm)
     savefig(p_combined, "network_results.png")
 
     return sol
