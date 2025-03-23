@@ -270,7 +270,7 @@ function run_machine_network(network_file)
     plot!(p5, t_aux, i_2_d_aux, label="I_2_D")
     plot!(p5, t_aux, i_2_q_aux, label="I_2_Q")
     p_combined = plot(p1, p2, p3, p4, p5, layout=(5, 1), size=(1200, 2000))
-    savefig(p_combined, "machine_network_results.png")
+    savefig(p_combined, "machine_network_results_new.png")
 
     return sol
 end

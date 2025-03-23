@@ -262,10 +262,10 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     M_diagonal[V_2_Q_IDX] = network.B_2
     M_diagonal[V_3_D_IDX] = network.B_3
     M_diagonal[V_3_Q_IDX] = network.B_3
-    M_diagonal[I_1_D_IDX] = network.X_IB
-    M_diagonal[I_1_Q_IDX] = network.X_IB
-    M_diagonal[I_3_D_IDX] = imag(network.Z_L)
-    M_diagonal[I_3_Q_IDX] = imag(network.Z_L)
+    M_diagonal[I_1_D_IDX] = 0.0
+    M_diagonal[I_1_Q_IDX] = 0.0
+    M_diagonal[I_3_D_IDX] = 0.0
+    M_diagonal[I_3_Q_IDX] = 0.0
     M_diagonal[I_B1_D_IDX:I_B3_Q_IDX] .= 0.0
     network.M = M_diagonal
 
@@ -339,12 +339,12 @@ function update_network_states!(
     derivatives[V_3_Q_IDX] = (i_b3_q - network.B_3 * v_3_d)                                                     # d/dt (v_3_q) != 0
 
     # Current injections
-    # Bus 1 (Infinite Bus) (differential) –– From Milano's Eigenvalue Problems book, Eq. 1.48
-    derivatives[I_1_D_IDX] = ((network.E_IB_D - v_1_d) + network.X_IB * i_1_q)                                  # d/dt (i_1_d) != 0
-    derivatives[I_1_Q_IDX] = ((network.E_IB_Q - v_1_q) - network.X_IB * i_1_d)                                  # d/dt (i_1_q) != 0
-    # Bus 3 (Load) (differential) –– From Milano's Eigenvalue Problems book, Eq. 1.48
-    derivatives[I_3_D_IDX] = (v_3_d - R_load * i_3_d + X_load * i_3_q)                                          # d/dt (i_3_d) != 0
-    derivatives[I_3_Q_IDX] = (v_3_q - R_load * i_3_q - X_load * i_3_d)                                          # d/dt (i_3_q) != 0
+    # Bus 1 (Infinite Bus) (algebraic) –– From Milano's Eigenvalue Problems book, Eq. 1.50
+    derivatives[I_1_D_IDX] = ((network.E_IB_D - v_1_d) + network.X_IB * i_1_q)                                  # d/dt (i_1_d) = 0
+    derivatives[I_1_Q_IDX] = ((network.E_IB_Q - v_1_q) - network.X_IB * i_1_d)                                  # d/dt (i_1_q) = 0
+    # Bus 3 (Load) (differential) –– From Milano's Eigenvalue Problems book, Eq. 1.50
+    derivatives[I_3_D_IDX] = (v_3_d - R_load * i_3_d + X_load * i_3_q)                                          # d/dt (i_3_d) = 0
+    derivatives[I_3_Q_IDX] = (v_3_q - R_load * i_3_q - X_load * i_3_d)                                          # d/dt (i_3_q) = 0
 
     # Shunt currents (algebraic)
     # Bus 1

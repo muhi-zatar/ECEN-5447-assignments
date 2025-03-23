@@ -56,7 +56,7 @@ function run_machine_network(network_file)
 
     # Calculate EMF behind reactance at Bus 2
     p.E_2_D = network_states[9] - i_2_q_init * p.network.X_IB
-    p.E_2_Q = network_states[10] - i_2_d_init * p.network.X_IB
+    p.E_2_Q = network_states[10] + i_2_d_init * p.network.X_IB
 
     M_system = zeros(Float64, length(states))
 
@@ -68,7 +68,7 @@ function run_machine_network(network_file)
         end
     end
 
-    M_system[bus_idx] .= network.X_IB
+    M_system[bus_idx] .= 0.0
 
     mass_matrix = Diagonal(M_system)
 
@@ -110,7 +110,7 @@ function run_machine_network(network_file)
         V_terminal, S_terminal, I_terminal, i_2_d, i_2_q, Z_load_test = update_network_states!(
             network_states_f64,
             du_network,
-            S_terminal_aux[end],
+            S_new,
             params.network
         )
 
@@ -140,7 +140,7 @@ function run_machine_network(network_file)
     # Build function 
     explicitDAE_M = ODEFunction(network_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 10.0)
+    tspan = (0.0, 0.05)
     prob = ODEProblem(explicitDAE_M, states, tspan, p)
 
     # Define the set of times to apply a perturbation
@@ -169,12 +169,11 @@ function run_machine_network(network_file)
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Rosenbrock23(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
-    #sol = solve(prob, Rodas5P(autodiff=false), saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5P(autodiff=false), saveat=0.01, callback=cb, tstops=perturb_times)
 
     p1 = plot(sol, idxs=(0, [7, 8, 9, 10, 11, 12]), title="Bus Voltages", labels=["V_1_D" "V_1_Q" "V_2_D" "V_2_Q" "V_3_D" "V_3_Q"])
     plot!(p1, t_aux, abs.(V_terminal_aux), label="Bus 2 Magnitude")
-    plot!(twinx(), t_aux, rad2deg.(angle.(V_terminal_aux)), label="Bus 2 Angle", ylabel="Angle (degrees)", legend=:bottomleft, lw=2)
+    plot!(twinx(), t_aux, (angle.(V_terminal_aux)), label="Bus 2 Angle", ylabel="Angle (radians)", legend=:bottomleft, lw=2)
     p2 = plot(sol, idxs=(0, [13, 14, 15, 16]), title="Bus Current Injections", labels=["I_1_D" "I_1_Q" "I_3_D" "I_3_Q"])
     #plot!(p2, t_aux, i_2_d_aux, label="I_2_D")
     #plot!(p2, t_aux, i_2_q_aux, label="I_2_Q")
