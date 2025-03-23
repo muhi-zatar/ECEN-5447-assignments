@@ -1,8 +1,8 @@
 cd(@__DIR__)
 using Pkg
 Pkg.activate("../.")
-Pkg.resolve() # make sure Manifest matches Project
-Pkg.instantiate() # install missing dependencies
+#Pkg.resolve() # make sure Manifest matches Project
+#Pkg.instantiate() # install missing dependencies
 
 # Importing necessary Modules
 using PowerSystemCaseBuilder
@@ -12,6 +12,7 @@ using Plots
 using Sundials
 using InfrastructureSystems
 using PowerSystems
+using Logging
 const PSY = PowerSystems
 
 # Build the system frp, PSID systems, this should be similar to ours.
@@ -41,7 +42,7 @@ inf_source = Source(;
     reactive_power=0.0,
     bus=slack_bus, #bus
     R_th=0.0, #Rth
-    X_th=5e-6, #Xth
+    X_th=0.1, #Xth
 );
 
 # Add the infinite source
@@ -67,14 +68,6 @@ sp_machine = SauerPaiMachine(
     # γ_q1 = ,
     # γ_d2 = ,
     # γ_q2 = ,
-    Dict("S10" => 0.0, "S12" => 0.0),
-    3.148, # H
-    2.0, # D
-    1.0,    # ω_ref (typically 1.0 pu)
-    60.0,   # frequency (Hz)
-    [:δ, :ω, :Eqp, :Edp, :psikd, :psikq],  # state names
-    6,      # number of states
-    InfrastructureSystems.InfrastructureSystemsInternal()
 )
 
 # Define Shaft with single mass
@@ -135,8 +128,13 @@ sim = Simulation(
     ResidualModel,
     sys,
     pwd(),
-    tspan
+    tspan,
+    console_level=Logging.Info
 )
+
+# Print the initial values
+show_states_initial_value(sim)
+
 # execute the simulation
 execute!(
     sim, #simulation structure
@@ -145,3 +143,64 @@ execute!(
 )
 
 results = read_results(sim)
+
+# Plot some things
+V_mag = get_voltage_magnitude_series(results, 102)
+plot(V_mag)
+
+### Line Trip Perturbations
+
+#Make a copy of the original system
+new_sys = deepcopy(sys);
+
+#Remove Line "BUS 1-BUS 2-i_1"
+remove_component!(DynamicBranch, new_sys, "BUS 2-BUS 3-i_1")
+
+# Weird update of Ybus – we don't know why the tutorial does this
+# fault_branches2 = get_components(DynamicBranch, new_sys)
+
+# for br in fault_branches2
+#     if get_name(br) == "BUS 1-BUS 3-i_1"
+#         br.r = 3 * br.r
+#         br.x = 3 * br.x
+#         b_new = (from=br.b.from / 3, t=br.b.to / 3)
+#         br.b = b_new
+#     end
+# end
+
+# Obtain the new Ybus
+Ybus_fault_dyn = Ybus(new_sys).data
+
+# Hack – set our Ybus to exactly the same values as in Step 3.1 of https://nrel-sienna.github.io/PowerSimulationsDynamics.jl/stable/tutorials/tutorial_dynamic_lines/
+# Ybus_fault_dyn[1, 1] = 0.91954 - im * 10.9011
+# Ybus_fault_dyn[2, 2] = 0.689655 - im * 8.17586
+# Ybus_fault_dyn[1, 3] = -0.229885 + im * 2.75862
+# Ybus_fault_dyn[3, 1] = -0.229885 + im * 2.75862
+# Ybus_fault_dyn[3, 3] = 0.229885 - im * 2.72529
+
+Ybus_change_dyn = NetworkSwitch(
+    1.0, #change at t = 1.0
+    Ybus_fault_dyn, #New YBus
+)
+
+# Define Simulation
+sim_dyn = Simulation(
+    ResidualModel, #Type of model used
+    sys, #system
+    pwd(), #folder to output results
+    (0.0, 30.0), #time span
+    Ybus_change_dyn, #Type of perturbation
+)
+
+#Run the simulation
+execute!(
+    sim_dyn, #simulation structure
+    IDA(), #Sundials DAE Solver
+    dtmax=0.02, #Maximum step size
+)
+
+line_trip_results = read_results(sim_dyn)
+
+# Plot some things
+V_mag = get_voltage_magnitude_series(line_trip_results, 102)
+plot(V_mag)
