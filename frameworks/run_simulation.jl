@@ -9,6 +9,7 @@ using PowerSystemCaseBuilder
 using PowerSimulationsDynamics
 using PowerNetworkMatrices
 using Plots
+using Plots.PlotMeasures
 using Sundials
 using InfrastructureSystems
 using PowerSystems
@@ -17,6 +18,77 @@ const PSY = PowerSystems
 
 # Build the system frp, PSID systems, this should be similar to ours.
 sys = build_system(PSIDTestSystems, "psid_test_threebus_multimachine_dynlines")
+
+# Define a helper function for plotting
+function plot_stuff(results, title=nothing)
+    # Bus voltages
+    V_mag_series_IB = get_voltage_magnitude_series(results, 101)
+    V_mag_series_SM = get_voltage_magnitude_series(results, 102)
+    V_mag_series_L = get_voltage_magnitude_series(results, 103)
+
+    p1 = plot(V_mag_series_SM, label="SG Bus", title="Bus Voltages", ylim=(0.85, 1.15), linewidth=2)
+    plot!(p1, V_mag_series_IB, label="Infinite Bus", linewidth=2)
+    plot!(p1, V_mag_series_L, label="Load Bus", linewidth=2)
+    ylabel!(p1, "Voltage [p.u.]")
+    xlabel!(p1, "Time [s]")
+    if title !== nothing
+        savefig(p1, "Voltage_$title.png")
+    else
+        savefig(p1, "Voltage.png")
+    end
+
+    # Rotor angle
+    rotor_angle_series = get_state_series(results, ("generator-102-1", :δ))
+
+    p2 = plot(rotor_angle_series[1], rad2deg.(rotor_angle_series[2]), label="SG Bus", title="Rotor Angles", ylim=(5, 20), linewidth=2)
+    ylabel!(p2, "δ [degree]")
+    xlabel!(p2, "Time [s]")
+    if title !== nothing
+        savefig(p2, "rotor_angle_$title.png")
+    else
+        savefig(p2, "rotor_angle.png")
+    end
+
+    # Frequency
+    rotor_speed_series = get_state_series(results, ("generator-102-1", :ω))
+
+    p3 = plot(rotor_speed_series[1], ((rotor_speed_series[2] .- rotor_speed_series[2][1]) .* 60), label="SG Bus", title="Rotor Speed", ylim=(-0.5, 0.5), linewidth=2)
+    ylabel!(p3, "ω Deviation [Hz]")
+    xlabel!(p3, "Time [s]")
+    if title !== nothing
+        savefig(p3, "rotor_speed_$title.png")
+    else
+        savefig(p3, "rotor_speed.png")
+    end
+
+    # Active power
+    active_power_series_SM = get_activepower_series(results, "generator-102-1")
+    active_power_series_L = get_activepower_series(results, "load1031")
+
+    p4 = plot(active_power_series_SM[1], ((active_power_series_SM[2] .- active_power_series_SM[2][1]) .* 100), label="SG Bus", title="Bus Active Power Generation/Consumption", ylim=(-50, 50), linewidth=2)
+    plot!(p4, active_power_series_L[1], ((active_power_series_L[2] .- active_power_series_L[2][1]) .* 100), label="Load Bus", linewidth=2)
+    ylabel!(p4, "Active Power Deviation [MW]")
+    xlabel!(p4, "Time [s]")
+    if title !== nothing
+        savefig(p4, "active_power_$title.png")
+    else
+        savefig(p4, "active_power.png")
+    end
+
+    # P-δ characteristic
+    p5 = plot(rad2deg.(rotor_angle_series[2]), (active_power_series_SM[2] .* 100), label="SG Bus", title="P-δ characteristic", xlim=(5, 20), ylim=(70, 110), linewidth=2)
+    ylabel!(p5, "Active Power [MW]")
+    xlabel!(p5, "δ [degree]")
+    if title !== nothing
+        savefig(p5, "power_vs_angle_$title.png")
+    else
+        savefig(p5, "power_vs_angle.png")
+    end
+
+    return
+end
+
+##### STEP 1: MODIFY THE NETWORK TO MATCH OUR MODEL #####
 
 # See which buses have generators
 gens = collect(get_components(ThermalStandard, sys))
@@ -121,7 +193,7 @@ dg1 = DynamicGenerator(
 add_component!(sys, dg1, machine_gen)
 
 
-### Run a Dynamic Simulation ###
+##### STEP 2: RUN A DYNAMIC SIMULATION IN STEADY-STATE #####
 # Define Simulation
 tspan = (0.0, 30.0)
 sim = Simulation(
@@ -144,39 +216,19 @@ execute!(
 
 results = read_results(sim)
 
-# Plot some things
-V_mag = get_voltage_magnitude_series(results, 102)
-plot(V_mag)
+### Plot some things
+plot_stuff(results, "steady-state")
 
-### Line Trip Perturbations
+##### STEP 3: RUN A SIMULATION FOR A LINE TRIP #####
 
 #Make a copy of the original system
 new_sys = deepcopy(sys);
 
 #Remove Line "BUS 1-BUS 2-i_1"
-remove_component!(DynamicBranch, new_sys, "BUS 2-BUS 3-i_1")
-
-# Weird update of Ybus – we don't know why the tutorial does this
-# fault_branches2 = get_components(DynamicBranch, new_sys)
-
-# for br in fault_branches2
-#     if get_name(br) == "BUS 1-BUS 3-i_1"
-#         br.r = 3 * br.r
-#         br.x = 3 * br.x
-#         b_new = (from=br.b.from / 3, t=br.b.to / 3)
-#         br.b = b_new
-#     end
-# end
+remove_component!(DynamicBranch, new_sys, "BUS 1-BUS 2-i_1")
 
 # Obtain the new Ybus
 Ybus_fault_dyn = Ybus(new_sys).data
-
-# Hack – set our Ybus to exactly the same values as in Step 3.1 of https://nrel-sienna.github.io/PowerSimulationsDynamics.jl/stable/tutorials/tutorial_dynamic_lines/
-# Ybus_fault_dyn[1, 1] = 0.91954 - im * 10.9011
-# Ybus_fault_dyn[2, 2] = 0.689655 - im * 8.17586
-# Ybus_fault_dyn[1, 3] = -0.229885 + im * 2.75862
-# Ybus_fault_dyn[3, 1] = -0.229885 + im * 2.75862
-# Ybus_fault_dyn[3, 3] = 0.229885 - im * 2.72529
 
 Ybus_change_dyn = NetworkSwitch(
     1.0, #change at t = 1.0
@@ -202,5 +254,61 @@ execute!(
 line_trip_results = read_results(sim_dyn)
 
 # Plot some things
-V_mag = get_voltage_magnitude_series(line_trip_results, 102)
-plot(V_mag)
+plot_stuff(line_trip_results, "line_trip")
+
+##### STEP 4: RUN A SIMULATION OF A LOAD INCREASE #####
+# Get the device
+l_device = get_component(ElectricLoad, sys, "load1031")
+
+# Increase the load by decreasing the reference value
+load_increase = LoadChange(1.0, l_device, :P_ref, (1.8 * 0.85))
+
+# Define Simulation
+sim_dyn_load_increase = Simulation(
+    ResidualModel, #Type of model used
+    sys, #system
+    pwd(), #folder to output results
+    (0.0, 30.0), #time span
+    load_increase, #Type of perturbation
+)
+
+#Run the simulation
+execute!(
+    sim_dyn_load_increase, #simulation structure
+    IDA(), #Sundials DAE Solver
+    dtmax=0.02, #Maximum step size
+)
+
+load_increase_results = read_results(sim_dyn_load_increase)
+
+# Plot results
+plot_stuff(load_increase_results, "load_increase")
+
+
+##### STEP 5: RUN A SIMULATION OF A LOAD DECREASE #####
+# Get the device
+l_device = get_component(ElectricLoad, sys, "load1031")
+
+# Decrease the load by increasing the reference value
+load_decrease = LoadChange(1.0, l_device, :P_ref, (1.8 * 1.15))
+
+# Define Simulation
+sim_dyn_load_decrease = Simulation(
+    ResidualModel, #Type of model used
+    sys, #system
+    pwd(), #folder to output results
+    (0.0, 30.0), #time span
+    load_decrease, #Type of perturbation
+)
+
+#Run the simulation
+execute!(
+    sim_dyn_load_decrease, #simulation structure
+    IDA(), #Sundials DAE Solver
+    dtmax=0.02, #Maximum step size
+)
+
+load_decrease_results = read_results(sim_dyn_load_decrease)
+
+# Plot results
+plot_stuff(load_decrease_results, "load_decrease")
