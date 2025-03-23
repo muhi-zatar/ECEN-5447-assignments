@@ -34,10 +34,6 @@ const V_2_D_IDX = 9
 const V_2_Q_IDX = 10
 const V_3_D_IDX = 11
 const V_3_Q_IDX = 12
-const I_1_D_IDX = 13
-const I_1_Q_IDX = 14
-const I_3_D_IDX = 15
-const I_3_Q_IDX = 16
 
 mutable struct MachineNetworkParams
     network::ThreeBusNetwork
@@ -105,10 +101,6 @@ function run_machine_network(network_file)
     println("  V_2_Q: $(network_states[V_2_Q_IDX])")
     println("  V_3_D: $(network_states[V_3_D_IDX])")
     println("  V_3_Q: $(network_states[V_3_Q_IDX])")
-    println("  I_1_D: $(network_states[I_1_D_IDX])")
-    println("  I_1_Q: $(network_states[I_1_Q_IDX])")
-    println("  I_3_D: $(network_states[I_3_D_IDX])")
-    println("  I_3_Q: $(network_states[I_3_Q_IDX])")
 
     println("Initial bus power (from PF): $(complex(P,Q))")
     println("Initial bus power (calculated): $(S_terminal_init)")
@@ -116,8 +108,8 @@ function run_machine_network(network_file)
     states = vcat(network_states, machine_states)
 
     # Define state 
-    network_idx = 1:16
-    machine_idx = 17:22
+    network_idx = 1:12
+    machine_idx = 13:18
 
     p = MachineNetworkParams(
         network,
@@ -194,7 +186,7 @@ function run_machine_network(network_file)
     prob = ODEProblem(machine_network_dynamics!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [40.0]
+    perturb_times = [5.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -205,7 +197,7 @@ function run_machine_network(network_file)
     function affect!(integrator)
         #### Uncomment the desired perturbation ####
         # Load Jump
-        integrator.u[integrator.p.machine_idx[DELTA]] *= 0.95
+        integrator.p.network.Z_L *= 0.99
 
         # Load Decrease
         #integrator.p.network.Z_L *= 1.15
@@ -242,10 +234,10 @@ function run_machine_network(network_file)
     plot!(p3, t, [sol[network_idx[10], i] for i in 1:length(t)],
         label="Vq", linewidth=2)
     p4 = plot(sol, idxs=(0, [7, 8, 9, 10, 11, 12]), title="Network Bus Voltages", labels=["V_1_D" "V_1_Q" "V_2_D" "V_2_Q" "V_3_D" "V_3_Q"])
-    p5 = plot(sol, idxs=(0, [13, 14, 15, 16]), title="Network Bus Current Injections", labels=["I_1_D" "I_1_Q" "I_3_D" "I_3_Q"])
-    plot!(p5, t_aux, i_2_d_aux, label="I_2_D")
-    plot!(p5, t_aux, i_2_q_aux, label="I_2_Q")
-    p_combined = plot(p1, p2, p3, p4, p5, layout=(5, 1), size=(1200, 2000), leftmargin=50mm)
+    # p5 = plot(sol, idxs=(0, [13, 14, 15, 16]), title="Network Bus Current Injections", labels=["I_1_D" "I_1_Q" "I_3_D" "I_3_Q"])
+    # plot!(p5, t_aux, i_2_d_aux, label="I_2_D")
+    # plot!(p5, t_aux, i_2_q_aux, label="I_2_Q")
+    p_combined = plot(p1, p2, p3, p4, layout=(4, 1), size=(1200, 2000), leftmargin=50mm)
     savefig(p_combined, "machine_network_results.png")
 
     return sol

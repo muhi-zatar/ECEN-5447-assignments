@@ -10,7 +10,7 @@ using LinearAlgebra
 const BUS_INFINITE_BUS = 1
 const BUS_MACHINE_MODEL = 2
 const BUS_LOAD = 3
-const NUM_STATES = 16
+const NUM_STATES = 12
 const I_12_D_IDX = 1
 const I_12_Q_IDX = 2
 const I_13_D_IDX = 3
@@ -23,10 +23,10 @@ const V_2_D_IDX = 9
 const V_2_Q_IDX = 10
 const V_3_D_IDX = 11
 const V_3_Q_IDX = 12
-const I_1_D_IDX = 13
-const I_1_Q_IDX = 14
-const I_3_D_IDX = 15
-const I_3_Q_IDX = 16
+# const I_1_D_IDX = 13
+# const I_1_Q_IDX = 14
+# const I_3_D_IDX = 15
+# const I_3_Q_IDX = 16
 
 # Helper functions
 # not all of them are used.
@@ -159,10 +159,10 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     network.Z_L = Z_dq[BUS_LOAD]             # The load is at the third bus
 
     # Define state vector elements (Assume steady-state)
-    states[I_1_D_IDX] = i_d[1]                                      # Bus 1 d-axis injected current
-    states[I_1_Q_IDX] = i_q[1]                                      # Bus 1 q-axis injected current
-    states[I_3_D_IDX] = i_d[3]                                      # Bus 3 d-axis injected current
-    states[I_3_Q_IDX] = i_q[3]                                      # Bus 3 q-axis injected current
+    i_1_d = i_d[1]                                      # Bus 1 d-axis injected current
+    i_1_q = i_q[1]                                      # Bus 1 q-axis injected current
+    i_3_d = i_d[3]                                      # Bus 3 d-axis injected current
+    i_3_q = i_q[3]                                      # Bus 3 q-axis injected current
     states[V_1_D_IDX] = v_d[1]                                      # Bus 1 d-axis terminal voltage             
     states[V_1_Q_IDX] = v_q[1]                                      # Bus 1 q-axis terminal voltage             
     states[V_2_D_IDX] = v_d[2]                                      # Bus 2 d-axis terminal voltage             
@@ -178,8 +178,8 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
 
     # Voltage behind reactance
     # TODO: If eliminating mass matrix doesn't work, look into this
-    network.E_IB_D = v_d[BUS_INFINITE_BUS] - i_q[BUS_INFINITE_BUS] * network.X_IB
-    network.E_IB_Q = v_q[BUS_INFINITE_BUS] + i_d[BUS_INFINITE_BUS] * network.X_IB
+    network.E_IB_D = v_d[BUS_INFINITE_BUS] - i_1_q * network.X_IB
+    network.E_IB_Q = v_q[BUS_INFINITE_BUS] + i_1_d * network.X_IB
 
     # Sanity check on voltages behind reactance
     E1 = complex(network.E_IB_D, network.E_IB_Q)
@@ -210,12 +210,12 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
 
     # Sanity check on line currents (this is just a KVL on the calculated initial values)
     res_i = [
-        states[I_1_D_IDX] - states[I_12_D_IDX] - states[I_13_D_IDX] - i_b1_d;
-        states[I_1_Q_IDX] - states[I_12_Q_IDX] - states[I_13_Q_IDX] - i_b1_q;
+        i_1_d - states[I_12_D_IDX] - states[I_13_D_IDX] - i_b1_d;
+        i_1_q - states[I_12_Q_IDX] - states[I_13_Q_IDX] - i_b1_q;
         i_2_d + states[I_12_D_IDX] - states[I_23_D_IDX] - i_b2_d;
         i_2_q + states[I_12_Q_IDX] - states[I_23_Q_IDX] - i_b2_q;
-        states[I_3_D_IDX] + states[I_23_D_IDX] + states[I_13_D_IDX] - i_b3_d;
-        states[I_3_Q_IDX] + states[I_23_Q_IDX] + states[I_13_Q_IDX] - i_b3_q
+        i_3_d + states[I_23_D_IDX] + states[I_13_D_IDX] - i_b3_d;
+        i_3_q + states[I_23_Q_IDX] + states[I_13_Q_IDX] - i_b3_q
     ]
 
     sanity_check(res_i, zeros(6), "Line current")
@@ -264,10 +264,10 @@ function update_network_states!(
     v_2_q = states[V_2_Q_IDX]
     v_3_d = states[V_3_D_IDX]
     v_3_q = states[V_3_Q_IDX]
-    i_1_d = states[I_1_D_IDX]
-    i_1_q = states[I_1_Q_IDX]
-    i_3_d = states[I_3_D_IDX]
-    i_3_q = states[I_3_Q_IDX]
+    # i_1_d = states[I_1_D_IDX]
+    # i_1_q = states[I_1_Q_IDX]
+    # i_3_d = states[I_3_D_IDX]
+    # i_3_q = states[I_3_Q_IDX]
     # i_b1_d = states[I_B1_D_IDX]
     # i_b1_q = states[I_B1_Q_IDX]
     # i_b2_d = states[I_B2_D_IDX]
@@ -281,6 +281,23 @@ function update_network_states!(
     i_2_d = real(I_dq)                    # Direct-axis component of bus current injections
     i_2_q = imag(I_dq)                    # Quadrature-axis component of bus current injections
 
+    # Unpack real and imaginary components of the load for convenience
+    R_load = real(network.Z_L)
+    X_load = imag(network.Z_L)
+
+    # Injected currents (algebraic)
+    # Bus 1 (Infinite Bus) (algebraic) –– From Milano's Eigenvalue Problems book, Eq. 1.50
+    i_1_q = -1 * (network.E_IB_D - v_1_d) / network.X_IB                                  # d/dt (i_1_d) = 0
+    i_1_d = (network.E_IB_Q - v_1_q) / network.X_IB                                       # d/dt (i_1_q) = 0
+
+    # Bus 3 (Load) (algebraic) –– From Milano's Eigenvalue Problems book, Eq. 1.50
+    A = [R_load -1*X_load;
+        X_load R_load]
+    b = [v_3_d; v_3_q]
+    injected_currents = A \ b
+    i_3_d = injected_currents[1]
+    i_3_q = injected_currents[2]
+
     # Shunt currents (algebraic)
     # Bus 1
     i_b1_d = i_1_d - i_12_d - i_13_d                                                # d/dt (i_b1_d) = 0
@@ -291,10 +308,6 @@ function update_network_states!(
     # Bus 3
     i_b3_d = i_3_d + i_23_d + i_13_d                                                 # d/dt (i_b3_d) = 0
     i_b3_q = i_3_q + i_23_q + i_13_q                                                 # d/dt (i_b3_q) = 0
-
-    # Unpack real and imaginary components of the load for convenience
-    R_load = real(network.Z_L)
-    X_load = imag(network.Z_L)
 
     # Define derivatives of all states (differential and algebraic)
     # Line currents (differential)
@@ -312,14 +325,6 @@ function update_network_states!(
     derivatives[V_2_Q_IDX] = (i_b2_q - network.B_2 * v_2_d) / network.B_2                                                     # d/dt (v_2_q) != 0
     derivatives[V_3_D_IDX] = (i_b3_d + network.B_3 * v_3_q) / network.B_3                                                     # d/dt (v_3_d) != 0
     derivatives[V_3_Q_IDX] = (i_b3_q - network.B_3 * v_3_d) / network.B_3                                                     # d/dt (v_3_q) != 0
-
-    # Current injections
-    # Bus 1 (Infinite Bus) (differential) –– From Milano's Eigenvalue Problems book, Eq. 1.48
-    derivatives[I_1_D_IDX] = ((network.E_IB_D - v_1_d) + network.X_IB * i_1_q) / network.X_IB                                  # d/dt (i_1_d) != 0
-    derivatives[I_1_Q_IDX] = ((network.E_IB_Q - v_1_q) - network.X_IB * i_1_d) / network.X_IB                                  # d/dt (i_1_q) != 0
-    # Bus 3 (Load) (differential) –– From Milano's Eigenvalue Problems book, Eq. 1.48
-    derivatives[I_3_D_IDX] = (v_3_d - R_load * i_3_d + X_load * i_3_q) / imag(network.Z_L)                                          # d/dt (i_3_d) != 0
-    derivatives[I_3_Q_IDX] = (v_3_q - R_load * i_3_q - X_load * i_3_d) / imag(network.Z_L)                                          # d/dt (i_3_q) != 0
 
     # Compute apparent power to return (Milano Eigenvalue Problems Eq. 1.42)
     P_terminal = v_2_d * i_2_d + v_2_q * i_2_q
