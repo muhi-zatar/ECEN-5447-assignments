@@ -52,8 +52,8 @@ function plot_stuff(results, title=nothing)
     # Frequency
     rotor_speed_series = get_state_series(results, ("generator-102-1", :ω))
 
-    p3 = plot(rotor_speed_series[1], ((rotor_speed_series[2] .- rotor_speed_series[2][1]) .* 60), label="SG Bus", title="Rotor Speed", ylim=(-0.5, 0.5), linewidth=2)
-    ylabel!(p3, "ω Deviation [Hz]")
+    p3 = plot(rotor_speed_series[1], (rotor_speed_series[2] .* 60), label="SG Bus", title="Rotor Speed", ylim=(59.9, 60.1), linewidth=2)
+    ylabel!(p3, "ω [Hz]")
     xlabel!(p3, "Time [s]")
     if title !== nothing
         savefig(p3, "rotor_speed_$title.png")
@@ -85,6 +85,19 @@ function plot_stuff(results, title=nothing)
         savefig(p5, "power_vs_angle.png")
     end
 
+    # V-Q characteristic
+    reactive_power_series_SM = get_reactivepower_series(results, "generator-102-1")
+
+    p6 = plot(V_mag_series_SM[2], (reactive_power_series_SM[2] .* 100), label="SG Bus", title="V-Q characteristic", xlim=(0.9, 1.1), linewidth=2)
+    scatter!(p6, [V_mag_series_SM[2][1]], [(reactive_power_series_SM[2][1] .* 100)], label="start")
+    scatter!(p6, [V_mag_series_SM[2][end]], [(reactive_power_series_SM[2][end] .* 100)], label="end")
+    ylabel!(p6, "Reactive Power [MVar]")
+    xlabel!(p6, "Voltage [p.u.]")
+    if title !== nothing
+        savefig(p6, "reactive_power_vs_voltage_$title.png")
+    else
+        savefig(p6, "reactive_power_vs_voltage.png")
+    end
     return
 end
 
