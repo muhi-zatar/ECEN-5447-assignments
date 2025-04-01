@@ -7,14 +7,15 @@ using LinearAlgebra
 using DifferentialEquations
 using NLsolve
 
+const NUM_STATES = 8
 const DELTA = 1
 const OMEGA = 2
 const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
-const PSI_D = 7
-const PSI_Q = 8
+const PSI_D = 7                      # Algebraic
+const PSI_Q = 8                      # Algebraic
 
 # Define common constants and variables
 # Defined for the initialization of the machine
@@ -64,6 +65,7 @@ mutable struct SauerPaiMachine
     system_base_frequency::Float64
     H::Float64 # Rearragned for tideness
     D::Float64 # REarranged for tindeness
+    M::AbstractArray{Float64}                     # The coefficients that go on the diagonal of the mass matrix
 
     # Constructor with default values
     function SauerPaiMachine(;
@@ -87,13 +89,14 @@ mutable struct SauerPaiMachine
         D=2.0,
         base_power=100.0,
         system_base_power=100.0,
-        system_base_frequency=60.0
+        system_base_frequency=60.0,
+        M=zeros(Float64, NUM_STATES, NUM_STATES)  # To be filled in during initialization
     )
 
         return new(R, X_d, X_q, Xd_p, Xq_p, Xd_pp, Xq_pp, Xl,
             Td0_p, Tq0_p, Td0_pp, Tq0_pp,
             γ_d1, γ_q1, γ_d2, γ_q2, base_power,
-            system_base_power, system_base_frequency, H, D)
+            system_base_power, system_base_frequency, H, D, M)
     end
 end
 
@@ -119,7 +122,7 @@ get_γ_q2(machine::SauerPaiMachine) = machine.γ_q2
 get_base_power(machine::SauerPaiMachine) = machine.base_power
 
 # Number of states
-get_n_states(::SauerPaiMachine) = 6
+get_n_states(::SauerPaiMachine) = NUM_STATES
 
 ```
 The module has two functions:
@@ -152,7 +155,7 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     V_R = real(V_terminal)
     V_I = imag(V_terminal)
     ω0 = 1.0
-
+    println("V_RI Machine: $(complex(V_R, V_I))")
 
     # Calculate initial values for the six states based on steady-state conditions
     # This is a simplified initialization
@@ -169,17 +172,11 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     vdq = V_terminal * ℯ^(-1 * im * (δ - π / 2))
     v_d = real(vdq)
     v_q = imag(vdq)
-    println("Machine DQ Voltage: $(complex(v_d, v_q))")
 
     # Current
     idq = I_complex * ℯ^(-1 * im * (δ - π / 2)) # Fixed from δ to δ0
     i_d = real(idq)
     i_q = imag(idq)
-
-    # Reconstruct power and print for sanity check:
-    p_bus = v_d * i_d + v_q * i_q
-    q_bus = v_q * i_d - v_d * i_q
-    println("Initial S_bus=$(complex(p_bus, q_bus))")       # This is correct
 
     # Initialize states - simplified for steady state
     A = [-machine.γ_q1 0 0 (1-machine.γ_q1) 0;
@@ -200,7 +197,6 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
     ψd_pp = solution[3]
     ψq_pp = solution[4]
     Vf = solution[5]
-
 
     # Use Milano Eqn. 15.11 to reconstruct the synchronous fluxes
     ψ_d = machine.R * i_q + v_q
@@ -273,8 +269,33 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
         # Debugging
         i_d = (1.0 / Xd_pp) * (γ_d1 * states[EQ_P] - states[PSI_D] + (1 - γ_d1) * states[PSI_D_PP])
         i_q = (1.0 / Xq_pp) * (-γ_q1 * states[ED_P] - states[PSI_Q] + (1 - γ_q1) * states[PSI_Q_PP])
+        V_dq0 = (ri_dq_machine(states[DELTA]) * [V_R; V_I])
+        v_d = V_dq0[1]
+        v_q = V_dq0[2]
+        p0 = v_d * i_d + v_q * i_q
+        q0 = v_q * i_d - v_d * i_q
+        println("Initial S_bus=$(complex(p0, q0))")
         println("I_DQ Machine: $(complex(i_d, i_q))")
+        println("V_DQ Machine: $(complex(v_d, v_q))")
+        println("ψ_d = $(states[PSI_D])")
+        println("ψ_q = $(states[PSI_Q])")
     end
+
+    # Calculate system base frequency in rad/s (used in mass matrix)
+    Ω_b = 2.0 * π * machine.system_base_frequency
+
+    # Populate mass matrix
+    M_diagonal = zeros(Float64, NUM_STATES)
+    M_diagonal[DELTA] = (1 / Ω_b)                                              # Equation 15.5
+    M_diagonal[OMEGA] = 2.0 * machine.H                                        # Equation 15.5
+    M_diagonal[EQ_P] = machine.Td0_p                                           # Equation 15.13
+    M_diagonal[ED_P] = machine.Tq0_p                                           # Equation 15.13
+    M_diagonal[PSI_D_PP] = machine.Td0_pp                                      # Equation 15.13
+    M_diagonal[PSI_Q_PP] = machine.Tq0_pp                                      # Equation 15.13
+    M_diagonal[PSI_D] = 0.0                                                    # Equation 15.11
+    M_diagonal[PSI_Q] = 0.0                                                    # Equation 15.11
+    machine.M = M_diagonal
+
     # Return initial states and field voltage
     return states, Vf, τ_m
 end
@@ -288,25 +309,6 @@ function update_machine_states!(
     τ_m::Float64,
     machine::SauerPaiMachine
 )
-    #Machine Data
-    # unncessary now, but good practice for us
-    R = get_R(machine)
-    Xd = get_Xd(machine)
-    Xq = get_Xq(machine)
-    Xd_p = get_Xd_p(machine)
-    Xq_p = get_Xq_p(machine)
-    Xd_pp = get_Xd_pp(machine)
-    Xq_pp = get_Xq_pp(machine)
-    Xl = get_Xl(machine)
-    Td0_p = get_Td0_p(machine)
-    γ_d1 = get_γ_d1(machine)
-    γ_q1 = get_γ_q1(machine)
-    γ_d2 = get_γ_d2(machine)
-    γ_q2 = get_γ_q2(machine)
-    V_R = real(V_terminal)
-    V_I = imag(V_terminal)
-    ω0 = 1.0
-
     # Extract machine states
     δ = states[DELTA]
     ω = states[OMEGA]
@@ -317,86 +319,56 @@ function update_machine_states!(
     ψ_d = states[PSI_D]
     ψ_q = states[PSI_Q]
 
-    # δ = 0.1985470217433571
-
-    # System base values
-    f0 = machine.system_base_frequency
-
-    # Extract bus voltage angle and magnitude from complex terminal voltage
-    v_mag = abs(V_terminal)
-    θ = angle(V_terminal)
-
     # Move from network to machine DQ reference frame
     # Terminal voltage in dq reference frame
-    v_d = v_mag * sin(δ - θ)       # Eqn 15.4
-    v_q = v_mag * cos(δ - θ)       # Eqn 15.4
+    V_dq = ri_dq_machine(δ) * [real(V_terminal); imag(V_terminal)]
+    v_d = V_dq[1]       # Eqn 15.4
+    v_q = V_dq[2]       # Eqn 15.4
     V_mag = abs(complex(v_d, v_q)) # Debugging
-    # V_dq = ri_dq_machine(δ) * [real(V_terminal); imag(V_terminal)]
-    # v_d = V_dq[1]       # Eqn 15.4
-    # v_q = V_dq[2]       # Eqn 15.4
 
-    # Calculate currents and fluxes by solving system of equations from Milano Eq 15.11 and 15.15
-    # A = [R 0 0 1;
-    #     0 R -1 0;
-    #     Xd_pp 0 1 0;
-    #     0 Xq_pp 0 1]
-    # b = [-v_d;
-    #     -v_q;
-    #     γ_d1 * eq_p + (1 - γ_d1) * ψd_pp;
-    #     -1 * γ_q1 * ed_p + (1 - γ_q1) * ψq_pp]
-    # solution = A \ b
-    # i_d = solution[1]
-    # i_q = solution[2]
-    # ψ_d = solution[3]
-    # ψ_q = solution[4]
+    # Calculate DQ current from Milano Eq. 15.15
+    i_d = (1.0 / machine.Xd_pp) * (machine.γ_d1 * eq_p - ψ_d + (1 - machine.γ_d1) * ψd_pp)      # This goes wrong first
+    i_q = (1.0 / machine.Xq_pp) * (-machine.γ_q1 * ed_p - ψ_q + (1 - machine.γ_q1) * ψq_pp)
+    println("V_terminal = $V_terminal")
+    println("V_DQ = $(complex(v_d, v_q))")
+    println("I_DQ = $(complex(i_d, i_q))")
+    println("ψ_d = $ψ_d")
+    println("ψ_q = $ψ_q")
 
-    # TODO: This is wrong – need to revisit
-    i_d = (1.0 / Xd_pp) * (γ_d1 * eq_p - ψ_d + (1 - γ_d1) * ψd_pp)
-    i_q = (1.0 / Xq_pp) * (-γ_q1 * ed_p - ψ_q + (1 - γ_q1) * ψq_pp)
-    #println("V_RI = $V_RI")
-    # println("V_DQ = $(complex(v_d, v_q))")
-    # println("I_DQ = $(complex(i_d, i_q))")
-    # println("ψ_d = $ψ_d")
-    # println("ψ_q = $ψ_q")
-
-    # Calculate electrical torque
+    # Calculate electrical torque (Equation 15.6)
     τ_e = ψ_d * i_q - ψ_q * i_d
 
+    # Returned but unused except for printing
     I_mag = abs(complex(i_d, i_q))
-    V_RI = dq_ri_machine(δ) * [v_d; v_q]
+
     # State derivatives
-    # shaft equations (15.5 in Milano's book)
+    # Shaft equations (15.5 in Milano's book)
     ω_sys = 1.0
-    derivatives[DELTA] = 2.0 * π * f0 * (ω - ω_sys)
-    # derivatives[DELTA] = 0
+    derivatives[DELTA] = (ω - ω_sys)
     # Speed derivative
-    # derivatives[OMEGA] = 0
-    derivatives[OMEGA] = 1.0 / (2.0 * machine.H) * (
-        τ_m - τ_e - (machine.D * (ω - 1.0))
-    )
+    derivatives[OMEGA] = (τ_m - τ_e - (machine.D * (ω - ω_sys)))
 
-
-    # flux equations (15.13 in Milano's book)
-    derivatives[EQ_P] = (1.0 / machine.Td0_p) * (
+    # Flux equations (15.13 in Milano's book)
+    derivatives[EQ_P] = (
         -eq_p + Vf - (machine.X_d - machine.Xd_p) * (
             i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p
         )
     )
 
     # Also 15.13 in Milano's book
-    derivatives[ED_P] = (1.0 / machine.Tq0_p) * (
+    derivatives[ED_P] = (
         -ed_p + (machine.X_q - machine.Xq_p) * (
             i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_q2 * ed_p
         )
     )
 
-    # Subtransient flux derivatives
-    derivatives[PSI_D_PP] = (1.0 / machine.Td0_pp) * (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
-    derivatives[PSI_Q_PP] = (1.0 / machine.Tq0_pp) * (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
+    # Subtransient flux derivatives (Equation 15.13)
+    derivatives[PSI_D_PP] = (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
+    derivatives[PSI_Q_PP] = (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
 
-    # Synchronous flux derivatives (Eq 15.9)
-    derivatives[PSI_D] = (2.0 * π * f0) * (ω * ψ_q + R * i_d + v_d)
-    derivatives[PSI_Q] = (2.0 * π * f0) * (-ω * ψ_d + R * i_q + v_q)
+    # Synchronous flux derivatives – Algebraic (Eq 15.9)
+    derivatives[PSI_D] = (machine.R * i_d + ψ_q + v_d)
+    derivatives[PSI_Q] = (machine.R * i_q - ψ_d + v_q)
 
     # Calculate power at the bus to return
     p_bus = v_d * i_d + v_q * i_q       # Milano Eq. 15.2

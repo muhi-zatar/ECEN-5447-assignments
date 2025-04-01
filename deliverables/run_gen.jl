@@ -10,12 +10,15 @@ include("SauerPaiMachineModel.jl")
 
 using .SauerPaiMachineModel
 
+const NUM_STATES = 8
 const DELTA = 1
 const OMEGA = 2
 const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
+const PSI_D = 7                      # Algebraic
+const PSI_Q = 8                      # Algebraic
 
 mutable struct MachineParams
     machine::SauerPaiMachine
@@ -42,6 +45,7 @@ function run_machine_only()
     )
 
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
+    machine_idx = 1:NUM_STATES
 
     println("\nInitial Machine States:")
     println("Delta (rotor angle): $(machine_states[DELTA])")
@@ -50,6 +54,8 @@ function run_machine_only()
     println("ED_P: $(machine_states[ED_P])")
     println("PSI_D_PP: $(machine_states[PSI_D_PP])")
     println("PSI_Q_PP: $(machine_states[PSI_Q_PP])")
+    println("PSI_D: $(machine_states[PSI_D])")
+    println("PSI_Q: $(machine_states[PSI_Q])")
     println("Initial field voltage (Vf): $Vf_init")
     println("Initial mechanical torque (τm): $τ_m_init")
 
@@ -61,12 +67,16 @@ function run_machine_only()
         τ_m_init
     )
 
+    # Build mass matrix
+    mass_matrix = Diagonal(machine.M)
+    println("Mass matrix: $(machine.M)")
+
     function machine_dynamics!(du, u, params, t)
         machine_states = u
 
-        du_machine = zeros(Float64, 6)
+        du_machine = zeros(Float64, NUM_STATES)
 
-        I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(
+        _, _, ω_machine, V_mag, I_mag = update_machine_states!(
             machine_states,
             du_machine,
             params.V_terminal,
@@ -77,13 +87,20 @@ function run_machine_only()
 
         du = du_machine
 
-        if abs(t - round(t)) < 0.001
-            println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
+        # if abs(t - round(t)) < 0.001
+        #     println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
+        # end
+
+        if t > 0.001
+            exit()
         end
     end
 
+    # Build function
+    explicitDAE_M = ODEFunction(machine_dynamics!, mass_matrix=mass_matrix)
+
     tspan = (0.0, 25.0)
-    prob = ODEProblem(machine_dynamics!, machine_states, tspan, p)
+    prob = ODEProblem(explicitDAE_M, machine_states, tspan, p)
 
     # Define the set of times to apply a perturbation
     perturb_times = [35.0]               # Setting this far ahead for now – we can change this later
@@ -111,7 +128,7 @@ function run_machine_only()
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rosenbrock23(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 
@@ -130,7 +147,7 @@ function run_machine_only()
         label="ψq''", linewidth=2)
 
     p_combined = plot(p1, p2, layout=(2, 1), size=(800, 1200))
-    savefig(p_combined, "machine_only_results.png")
+    savefig(p_combined, "machine_only_results_DAE.png")
 
     return sol
 end
