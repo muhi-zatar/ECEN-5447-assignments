@@ -81,15 +81,15 @@ mutable struct SauerPaiMachine
         Tq0_p=0.85,
         Td0_pp=0.032,
         Tq0_pp=0.05,
-        γ_d1=0.128,
-        γ_q1=0.714,
-        γ_d2=22.35,
-        γ_q2=2.91,
-        H=3.148,
-        D=2.0,
+        γ_d1=0.1282051282051283,
+        γ_q1=0.7142857142857143,
+        γ_d2=22.35371466140696,
+        γ_q2=2.9154518950437316,
         base_power=100.0,
         system_base_power=100.0,
         system_base_frequency=60.0,
+        H=3.148,
+        D=2.0,
         M=zeros(Float64, NUM_STATES, NUM_STATES)  # To be filled in during initialization
     )
 
@@ -321,6 +321,16 @@ function update_machine_states!(
     i_d = states[I_D]
     i_q = states[I_Q]
 
+    # Debugging:
+    println("Delta (rotor angle): $δ")
+    println("Omega (rotor speed): $ω")
+    println("EQ_P: $eq_p")
+    println("ED_P: $ed_p")
+    println("PSI_D_PP: $ψd_pp")
+    println("PSI_Q_PP: $ψq_pp")
+    println("I_D: $i_d")
+    println("I_Q: $i_q")
+
     # Move from network to machine DQ reference frame
     # Terminal voltage in dq reference frame
     V_dq = ri_dq_machine(δ) * [real(V_terminal); imag(V_terminal)]
@@ -352,15 +362,15 @@ function update_machine_states!(
     # Speed derivative
     derivatives[OMEGA] = (τ_m - τ_e - (machine.D * (ω - ω_sys)))
 
-    # Flux equations (15.13 in Milano's book)
-    derivatives[EQ_P] = (-eq_p + Vf - (machine.X_d - machine.Xd_p) * (i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p))
+    # Subtransient flux derivatives (Equation 15.12)
+    ψd_pp_deriv = (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
+    derivatives[PSI_D_PP] = ψd_pp_deriv
+    ψq_pp_deriv = (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
+    derivatives[PSI_Q_PP] = ψq_pp_deriv
 
-    # Also 15.13 in Milano's book
-    derivatives[ED_P] = (-ed_p + (machine.X_q - machine.Xq_p) * (i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_q2 * ed_p))
-
-    # Subtransient flux derivatives (Equation 15.13)
-    derivatives[PSI_D_PP] = (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
-    derivatives[PSI_Q_PP] = (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
+    # Transient flux equations (15.12 in Milano's book)
+    derivatives[EQ_P] = (-eq_p - (machine.X_d - machine.Xd_p) * (i_d + machine.γ_d2 * ψd_pp_deriv) + Vf)
+    derivatives[ED_P] = (-ed_p + (machine.X_q - machine.Xq_p) * (i_q + machine.γ_q2 * ψq_pp_deriv))
 
     # Current derivatives – Algebraic (Eq 15.15)
     derivatives[I_Q] = ψ_d + machine.Xd_pp * i_d - machine.γ_d1 * eq_p - (1 - machine.γ_d1) * ψd_pp
