@@ -111,7 +111,7 @@ function run_machine_network(network_file)
 
     # Define state 
     network_idx = 1:12
-    machine_idx = 13:18
+    machine_idx = 13:20
 
     p = MachineNetworkParams(
         network,
@@ -146,8 +146,9 @@ function run_machine_network(network_file)
         # Calculate terminal voltage from current states (to use in update_machine_states!)
         v_2_d = network_states[V_2_D_IDX]
         v_2_q = network_states[V_2_Q_IDX]
-        V_terminal = (v_2_d + im * v_2_q) * exp(-im * π / 2)
+        
 
+        V_terminal = (v_2_d + im * v_2_q) * exp(-im *π / 2)
 
         # Update the states of each component
         _, S_terminal_machine, _, _, _ = update_machine_states!(
@@ -213,7 +214,7 @@ function run_machine_network(network_file)
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Tsit5(), saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5P(autodiff=false), saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 

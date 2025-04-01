@@ -352,6 +352,14 @@ function update_network_states!(
     i_b3_d = i_3_d + i_23_d + i_13_d                                                 # d/dt (i_b3_d) = 0
     i_b3_q = i_3_q + i_23_q + i_13_q                                                 # d/dt (i_b3_q) = 0
 
+    # print the above values
+    # println("i_b1_q: $i_b1_q")
+    # println("i_b1_d: $i_b1_d")
+    # println("i_b2_q: $i_b2_q")
+    # println("i_b2_d: $i_b2_d")
+    # println("i_b3_q: $i_b3_q")
+    # println("i_b3_d: $i_b3_d")
+    # exit()
     # Define derivatives of all states (differential and algebraic)
     # Line currents (differential)
     derivatives[I_12_D_IDX] = (v_1_d - v_2_d - network.R_12 * i_12_d + network.X_12 * i_12_q) / network.X_12                 # d/dt (i_12_d) != 0
@@ -361,6 +369,12 @@ function update_network_states!(
     derivatives[I_23_D_IDX] = (v_2_d - v_3_d - network.R_23 * i_23_d + network.X_23 * i_23_q) / network.X_23                 # d/dt (i_23_d) != 0
     derivatives[I_23_Q_IDX] = (v_2_q - v_3_q - network.R_23 * i_23_q - network.X_23 * i_23_d) / network.X_23                 # d/dt (i_23_q) != 0
 
+    # derivatives[I_12_D_IDX] = 0
+    # derivatives[I_12_Q_IDX] = 0
+    # derivatives[I_13_D_IDX] = 0
+    # derivatives[I_13_Q_IDX] = 0
+    # derivatives[I_23_D_IDX] = 0
+    # derivatives[I_23_Q_IDX] = 0
     # Bus voltages (differential)
     derivatives[V_1_D_IDX] = (i_b1_d + network.B_1 * v_1_q) / network.B_1                                                     # d/dt (v_1_d) != 0
     derivatives[V_1_Q_IDX] = (i_b1_q - network.B_1 * v_1_d) / network.B_1                                                     # d/dt (v_1_q) != 0
@@ -369,6 +383,13 @@ function update_network_states!(
     derivatives[V_3_D_IDX] = (i_b3_d + network.B_3 * v_3_q) / network.B_3                                                     # d/dt (v_3_d) != 0
     derivatives[V_3_Q_IDX] = (i_b3_q - network.B_3 * v_3_d) / network.B_3                                                     # d/dt (v_3_q) != 0
 
+    # put the above derivates to zero
+    # derivatives[V_1_D_IDX] = 0
+    # derivatives[V_1_Q_IDX] = 0
+    # derivatives[V_2_D_IDX] = 0
+    # derivatives[V_2_Q_IDX] = 0
+    # derivatives[V_3_D_IDX] = 0
+    # derivatives[V_3_Q_IDX] = 0
     # Compute apparent power to return (Milano Eigenvalue Problems Eq. 1.42)
     P_terminal = v_2_d * i_2_d + v_2_q * i_2_q
     Q_terminal = v_2_q * i_2_d - v_2_d * i_2_q

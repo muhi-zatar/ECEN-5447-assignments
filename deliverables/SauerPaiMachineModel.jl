@@ -7,13 +7,14 @@ using LinearAlgebra
 using DifferentialEquations
 using NLsolve
 
-# Defining the convention for each states
 const DELTA = 1
 const OMEGA = 2
 const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
+const PSI_D = 7
+const PSI_Q = 8
 
 # Define common constants and variables
 # Defined for the initialization of the machine
@@ -257,10 +258,12 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
         sol_x0 = sol.zero
 
         # Prepare state vector for return
-        states = zeros(Float64, 9)
+        states = zeros(Float64, 8)  # Increased size to 8 for the two new states
         states[DELTA] = sol_x0[1]
         τ_m = sol_x0[2]
         Vf = sol_x0[3]
+        states[PSI_Q] = sol_x0[4]   # Store ψ_q
+        states[PSI_D] = sol_x0[5]   # Store ψ_d
         states[OMEGA] = 1.0
         states[EQ_P] = sol_x0[6]
         states[ED_P] = sol_x0[7]
@@ -268,13 +271,10 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
         states[PSI_Q_PP] = sol_x0[9]
 
         # Debugging
-        i_d = (1.0 / Xd_pp) * (γ_d1 * states[EQ_P] - sol_x0[5] + (1 - γ_d1) * states[PSI_D_PP])      #15.15
-        i_q = (1.0 / Xq_pp) * (-γ_q1 * states[ED_P] - sol_x0[4] + (1 - γ_q1) * states[PSI_Q_PP])     #15.15
+        i_d = (1.0 / Xd_pp) * (γ_d1 * states[EQ_P] - states[PSI_D] + (1 - γ_d1) * states[PSI_D_PP])
+        i_q = (1.0 / Xq_pp) * (-γ_q1 * states[ED_P] - states[PSI_Q] + (1 - γ_q1) * states[PSI_Q_PP])
         println("I_DQ Machine: $(complex(i_d, i_q))")
-        println("ψ_d = $(sol_x0[5])")
-        println("ψ_q = $(sol_x0[4])")
     end
-
     # Return initial states and field voltage
     return states, Vf, τ_m
 end
@@ -314,6 +314,10 @@ function update_machine_states!(
     ed_p = states[ED_P]
     ψd_pp = states[PSI_D_PP]
     ψq_pp = states[PSI_Q_PP]
+    ψ_d = states[PSI_D]
+    ψ_q = states[PSI_Q]
+
+    # δ = 0.1985470217433571
 
     # System base values
     f0 = machine.system_base_frequency
@@ -332,40 +336,41 @@ function update_machine_states!(
     # v_q = V_dq[2]       # Eqn 15.4
 
     # Calculate currents and fluxes by solving system of equations from Milano Eq 15.11 and 15.15
-    A = [R 0 0 1;
-        0 R -1 0;
-        Xd_pp 0 1 0;
-        0 Xq_pp 0 1]
-    b = [-v_d;
-        -v_q;
-        γ_d1 * eq_p + (1 - γ_d1) * ψd_pp;
-        -1 * γ_q1 * ed_p + (1 - γ_q1) * ψq_pp]
-    solution = A \ b
-    i_d = solution[1]
-    i_q = solution[2]
-    ψ_d = solution[3]
-    ψ_q = solution[4]
+    # A = [R 0 0 1;
+    #     0 R -1 0;
+    #     Xd_pp 0 1 0;
+    #     0 Xq_pp 0 1]
+    # b = [-v_d;
+    #     -v_q;
+    #     γ_d1 * eq_p + (1 - γ_d1) * ψd_pp;
+    #     -1 * γ_q1 * ed_p + (1 - γ_q1) * ψq_pp]
+    # solution = A \ b
+    # i_d = solution[1]
+    # i_q = solution[2]
+    # ψ_d = solution[3]
+    # ψ_q = solution[4]
 
     # TODO: This is wrong – need to revisit
-    I_mag = abs(complex(i_d, i_q))
-    V_RI = dq_ri_machine(δ) * [v_d; v_q]
+
     # println("V_RI = $V_RI")
     # println("V_DQ = $(complex(v_d, v_q))")
     # println("I_DQ = $(complex(i_d, i_q))")
     # println("ψ_d = $ψ_d")
     # println("ψ_q = $ψ_q")
-
+    i_d = (1.0 / Xd_pp) * (γ_d1 * eq_p - ψ_d + (1 - γ_d1) * ψd_pp)
+    i_q = (1.0 / Xq_pp) * (-γ_q1 * ed_p - ψ_q + (1 - γ_q1) * ψq_pp)
     # Calculate electrical torque
     τ_e = ψ_d * i_q - ψ_q * i_d
-    println("Electrical torque = $τ_e")
 
-
+    I_mag = abs(complex(i_d, i_q))
+    V_RI = dq_ri_machine(δ) * [v_d; v_q]
     # State derivatives
     # shaft equations (15.5 in Milano's book)
     ω_sys = 1.0
     derivatives[DELTA] = 2.0 * π * f0 * (ω - ω_sys)
-
+    # derivatives[DELTA] = 0
     # Speed derivative
+    # derivatives[OMEGA] = 0
     derivatives[OMEGA] = 1.0 / (2.0 * machine.H) * (
         τ_m - τ_e - (machine.D * (ω - 1.0))
     )
@@ -389,6 +394,8 @@ function update_machine_states!(
     derivatives[PSI_D_PP] = (1.0 / machine.Td0_pp) * (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
     derivatives[PSI_Q_PP] = (1.0 / machine.Tq0_pp) * (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
 
+    derivatives[PSI_D] = ω * ψ_q - R * i_d - v_d
+    derivatives[PSI_Q] = -ω * ψ_d - R * i_q - v_q
     # Calculate power at the bus to return
     p_bus = v_d * i_d + v_q * i_q       # Milano Eq. 15.2
     q_bus = v_q * i_d - v_d * i_q       # Milano Eq. 15.3
