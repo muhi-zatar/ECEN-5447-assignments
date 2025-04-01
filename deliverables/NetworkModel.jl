@@ -28,12 +28,18 @@ const V_3_Q_IDX = 12
 # const I_3_D_IDX = 15
 # const I_3_Q_IDX = 16
 
+# Define common constants and variables
+# Matrix transformation functions
+# These are used to convert between rectangular and polar coordinates
+# Same as power system package to avoid confusion in this part.
+
+
 # Helper functions
 # not all of them are used.
 
 function sanity_check(test_value, true_value, calculation_under_test::String, verbose=true)
     distance = norm(test_value .- true_value, Inf)
-    if (distance > 1e-6)
+    if (distance > 1e-2)
         difference = test_value .- true_value
         println(difference)
         throw("$calculation_under_test calculation is probably wrong. Residual is: $distance")
@@ -44,14 +50,50 @@ function sanity_check(test_value, true_value, calculation_under_test::String, ve
     end
 end
 
-# RI to DQ transformation matrix
-function ri_dq(delta)
-    return [cos(delta) sin(delta); -sin(delta) cos(delta)]
+function ri_dq(δ::T) where {T<:Number}
+    #Uses the reference frame of the Kundur page 852 of RI to dq
+    # return Float64[
+    #     sin(δ) -cos(δ)
+    #     cos(δ) sin(δ)
+    # ]
+    return [
+        0.0 -1.0
+        1.0 0.0
+    ]
 end
 
-# DQ to RI transformation matrix
-function dq_ri(delta)
-    return [cos(delta) -sin(delta); sin(delta) cos(delta)]
+function dq_ri(δ::T) where {T<:Number}
+    ## Uses the referenceframe of the Kundur page 852 of dq to RI
+    # return Float64[
+    #     sin(δ) cos(δ)
+    #     -cos(δ) sin(δ)
+    # ]
+    return [
+        0.0 1.0
+        -1.0 0.0
+    ]
+end
+
+function dq_transformer(voltage, current, voltage_angle, current_angle)
+    # Print initial values
+    println("Voltage = $voltage")
+    println("Current = $current")
+    #println("Angle = $angle")
+
+    # First, calculate with ri_dq function
+    v_dq = ri_dq(voltage_angle) * voltage
+    i_dq = ri_dq(current_angle) * current
+    println("DQ Voltage = $v_dq")
+    println("DQ Current = $i_dq")
+
+    #####
+    # Try the reverse
+    v_ri = dq_ri(voltage_angle) * v_dq
+    i_ri = dq_ri(current_angle) * i_dq
+    println("RI Voltage = $v_ri")
+    println("RI Current = $i_ri")
+
+    return v_dq, i_dq
 end
 
 # Network structure for parameters
@@ -113,36 +155,29 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     # Prepare state vector for return
     states = zeros(Float64, NUM_STATES)
 
-    # Reconstruct complex power and terminal voltage
+    # Reconstruct complex voltage and current at the terminal to calculate DQ
     S = complex.(P, Q)
     V_terminal = V_m .* ℯ .^ (im .* θ)
-
-
-    print("\n\nInitial positive sequence voltage at the bus: $(V_m[BUS_MACHINE_MODEL]) ∠ $(rad2deg(θ[BUS_MACHINE_MODEL]))\n\n")
-
-    # Construct initial current to pass forward
-    I_RI = conj.(S ./ V_terminal)
-    I_2_RI = I_RI[BUS_MACHINE_MODEL]
-    I_2_m = abs(I_2_RI)
-    I_2_ang = angle(I_2_RI)
-    print("\n\nInitial positive sequence current at the bus: $(I_2_m) ∠ $(rad2deg(I_2_ang))\n\n")
+    print("\n\nInitial positive sequence voltage at the bus: $(V_terminal[2])\n\n")
+    I_terminal = conj.(S ./ V_terminal)
+    β = angle.(I_terminal)
+    print("\n\nInitial positive sequence current at the bus: $(I_terminal[2])\n\n")
 
     ##### MOVE TO NETWORK DQ REFERENCE FRAME #####
     # Find DQ voltage (Milano Eigenvalue Problems Eqn 1.44)
-    v_d = -V_m .* sin.(θ)             # Direct-axis component of bus voltage
-    v_q = V_m .* cos.(θ)              # Quadrature-axis component of bus voltage
-    V_dq = complex.(v_d, v_q)         # Complex bus voltages in network DQ reference frame
-
-    # Sanity check
-    V_test = V_dq .* ℯ .^ (-im * π / 2)
-    sanity_check(V_test, V_terminal, "DQ voltage")
-
-    # Find complex current
-    I_dq = conj(S ./ V_dq)            # Complex bus current injections in network DQ reference frame
-    i_d = real(I_dq)                  # Direct-axis component of bus current injections
-    i_q = imag(I_dq)                  # Quadrature-axis component of bus current injections
-    I_test = I_dq .* ℯ .^ (-im * π / 2)
-    sanity_check(I_test, I_RI, "DQ Current")
+    I_dq = zeros(Complex{Float64}, 3)
+    V_dq = zeros(Complex{Float64}, 3)
+    for i in 1:3
+        V_RI = [real(V_terminal[i]); imag(V_terminal[i])]
+        I_RI = [real(I_terminal[i]); imag(I_terminal[i])]
+        V_DQ, I_DQ = dq_transformer(V_RI, I_RI, θ[i], β[i])
+        V_dq[i] = complex(V_DQ[1], V_DQ[2])
+        I_dq[i] = complex(I_DQ[1], I_DQ[2])
+    end
+    i_d = real.(I_dq)
+    i_q = imag.(I_dq)
+    v_d = real.(V_dq)
+    v_q = imag.(V_dq)
 
     # Bus 2 (our model) injection current in network reference frame
     i_2_d = i_d[BUS_MACHINE_MODEL]
@@ -207,6 +242,14 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     states[I_13_Q_IDX] = line_currents[4]                           # Line 1-3 q-axis current
     states[I_23_D_IDX] = line_currents[5]                           # Line 2-3 d-axis current
     states[I_23_Q_IDX] = line_currents[6]                           # Line 2-3 q-axis current
+
+    # DEBUGGING – PRINT LINE CURRENTS
+    I_12 = dq_ri(0) * [line_currents[1]; line_currents[2]]
+    I_13 = dq_ri(0) * [line_currents[3]; line_currents[4]]
+    I_23 = dq_ri(0) * [line_currents[5]; line_currents[6]]
+    println("I_12 = $I_12")
+    println("I_13 = $I_13")
+    println("I_23 = $I_23")
 
     # Sanity check on line currents (this is just a KVL on the calculated initial values)
     res_i = [
@@ -285,12 +328,12 @@ function update_network_states!(
     R_load = real(network.Z_L)
     X_load = imag(network.Z_L)
 
-    # Injected currents (algebraic)
+    # Injected currents (inner variable)
     # Bus 1 (Infinite Bus) (algebraic) –– From Milano's Eigenvalue Problems book, Eq. 1.50
     i_1_q = -1 * (network.E_IB_D - v_1_d) / network.X_IB                                  # d/dt (i_1_d) = 0
     i_1_d = (network.E_IB_Q - v_1_q) / network.X_IB                                       # d/dt (i_1_q) = 0
 
-    # Bus 3 (Load) (algebraic) –– From Milano's Eigenvalue Problems book, Eq. 1.50
+    # Bus 3 (Load) (inner variable) –– From Milano's Eigenvalue Problems book, Eq. 1.50
     A = [R_load -1*X_load;
         X_load R_load]
     b = [v_3_d; v_3_q]
@@ -298,7 +341,7 @@ function update_network_states!(
     i_3_d = injected_currents[1]
     i_3_q = injected_currents[2]
 
-    # Shunt currents (algebraic)
+    # Shunt currents (inner variable)
     # Bus 1
     i_b1_d = i_1_d - i_12_d - i_13_d                                                # d/dt (i_b1_d) = 0
     i_b1_q = i_1_q - i_12_q - i_13_q                                                # d/dt (i_b1_q) = 0

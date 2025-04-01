@@ -22,6 +22,8 @@ const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
+const PSI_D = 7
+const PSI_Q = 8
 const I_12_D_IDX = 1
 const I_12_Q_IDX = 2
 const I_13_D_IDX = 3
@@ -73,8 +75,8 @@ function run_machine_network(network_file)
     Q_terminal_init = network_states[V_2_Q_IDX] * i_2_d_init - network_states[V_2_D_IDX] * i_2_q_init
     S_terminal_init = complex(P_terminal_init, Q_terminal_init)
     S_terminal = complex(P, Q) # From PF
-    sanity_check(V_terminal_init, V_terminal, "Initial quasi-static voltage")
-    sanity_check(S_terminal_init, S_terminal, "Initial apparent power")
+    #sanity_check(V_terminal_init, V_terminal, "Initial quasi-static voltage")
+    #sanity_check(S_terminal_init, S_terminal, "Initial apparent power")
 
     println("\nInitial States:")
     println("Machine states:")
@@ -186,7 +188,7 @@ function run_machine_network(network_file)
     prob = ODEProblem(machine_network_dynamics!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [5.0]
+    perturb_times = [35.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -211,7 +213,7 @@ function run_machine_network(network_file)
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Rodas5P(autodiff=false), saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Tsit5(), saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 

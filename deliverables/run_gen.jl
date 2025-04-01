@@ -75,7 +75,7 @@ function run_machine_only()
             params.machine
         )
 
-        du .= du_machine
+        du = du_machine
 
         if abs(t - round(t)) < 0.001
             println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
@@ -86,7 +86,7 @@ function run_machine_only()
     prob = ODEProblem(machine_dynamics!, machine_states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [2.5]               # Setting this far ahead for now – we can change this later
+    perturb_times = [35.0]               # Setting this far ahead for now – we can change this later
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)

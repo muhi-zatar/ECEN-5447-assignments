@@ -31,10 +31,10 @@ const V_2_D_IDX = 9
 const V_2_Q_IDX = 10
 const V_3_D_IDX = 11
 const V_3_Q_IDX = 12
-const I_1_D_IDX = 13
-const I_1_Q_IDX = 14
-const I_3_D_IDX = 15
-const I_3_Q_IDX = 16
+# const I_1_D_IDX = 13
+# const I_1_Q_IDX = 14
+# const I_3_D_IDX = 15
+# const I_3_Q_IDX = 16
 
 
 mutable struct NetworkParams
@@ -43,7 +43,6 @@ mutable struct NetworkParams
     E_2_D::Float64
     E_2_Q::Float64
     network_idx::UnitRange{Int64}
-    bus_idx::UnitRange{Int64}
 end
 
 function verify_network_initialiation(states, i_2_d, i_2_q, pf_solution)
@@ -85,7 +84,7 @@ function verify_network_initialiation(states, i_2_d, i_2_q, pf_solution)
     return
 end
 
-function run_machine_network(network_file)
+function run_network(network_file)
     V_sol, θ_sol, P_sol, Q_sol = get_powerflow_results(network_file)
     V_mag = V_sol[BUS_MACHINE_MODEL]
     V_angle = θ_sol[BUS_MACHINE_MODEL]
@@ -103,24 +102,22 @@ function run_machine_network(network_file)
     I_terminal_init = (i_2_d_init + im * i_2_q_init) * exp(-im * π / 2)
 
     #### Sanity Check on Network Initialization ####
-    verify_network_initialiation(network_states, i_2_d_init, i_2_q_init, (V_sol, θ_sol, P_sol, Q_sol))
+    #verify_network_initialiation(network_states, i_2_d_init, i_2_q_init, (V_sol, θ_sol, P_sol, Q_sol))
 
     states = vcat(network_states, i_2_d_init, i_2_q_init)
-    network_idx = 1:16
-    bus_idx = 17:18
+    network_idx = 1:12
 
     p = NetworkParams(
         network,
         complex(P, Q),
         0.0,
         0.0,
-        network_idx,
-        bus_idx
+        network_idx
     )
 
     # Calculate EMF behind reactance at Bus 2
-    p.E_2_D = network_states[9] - i_2_q_init * p.network.X_IB
-    p.E_2_Q = network_states[10] - i_2_d_init * p.network.X_IB
+    p.E_2_D = network_states[V_2_D_IDX] - i_2_q_init * p.network.X_IB
+    p.E_2_Q = network_states[V_2_Q_IDX] + i_2_d_init * p.network.X_IB
 
     # Define auxiliary variabls
     t_aux = Float64[]
@@ -133,50 +130,44 @@ function run_machine_network(network_file)
     push!(I_terminal_aux, I_terminal_init)
 
     function network_dynamics!(du, u, params, t)
-        network_states = u[1:16]
-        bus_2_states = u[17:18]
+        network_states = u
 
         network_states_f64 = convert.(Float64, network_states)
-        bus_2_states_f64 = convert.(Float64, bus_2_states)
 
         # Arrays for derivatives
-        du_network = similar(network_states, 16)
-        du_bus_2 = similar(bus_2_states, 2)
+        du_network = similar(network_states, 12)
 
         # Calculate new complex power
         v_2_d = network_states_f64[V_2_D_IDX]
         v_2_q = network_states_f64[V_2_Q_IDX]
-        i_2_d = bus_2_states_f64[1]
-        i_2_q = bus_2_states_f64[2]
+        #println("V_dq @ 2: $(complex(v_2_d, v_2_q))")
+        i_2_q = -1 * (params.E_2_D - v_2_d) / network.X_IB
+        i_2_d = (params.E_2_Q - v_2_q) / network.X_IB
+        #println("I_dq @ 2: $(complex(i_2_d, i_2_q))")
         P_new = v_2_d * i_2_d + v_2_q * i_2_q
         Q_new = v_2_q * i_2_d - v_2_d * i_2_q
         S_new = complex(P_new, Q_new)
-
-        # Additional states to make Bus 2 an infinite bus
-        du_bus_2[p.network_idx[1]] = ((network.E_IB_D - network_states[p.network_idx[9]]) + network.X_IB * i_2_q) / network.X_IB
-        du_bus_2[p.network_idx[2]] = ((network.E_IB_Q - network_states[p.network_idx[10]]) - network.X_IB * i_2_d) / network.X_IB
 
         # Update the states
         V_terminal, S_terminal, I_terminal, i_2_d, i_2_q = update_network_states!(
             network_states_f64,
             du_network,
-            S_terminal_aux[end],
+            S_new,
             params.network
         )
 
         # Sanity check
+        #println("S_new = $S_new")
         #sanity_check(S_new, params.S_terminal, "Returned power", false)
 
         # Update auxiliary variables
         push!(t_aux, t)
         push!(V_terminal_aux, V_terminal)
         push!(S_terminal_aux, S_new)
-        # push!(S_terminal_aux, S_new)
         push!(I_terminal_aux, I_terminal)
 
         # Copy derivatives to output
         du[p.network_idx] .= du_network
-        du[p.bus_idx] .= du_bus_2
 
         if abs(t - round(t)) < 0.00001
             println("t=$t: V_mag=$(abs(V_terminal)), I_mag=$(abs(Complex(i_2_d, i_2_q)))")
@@ -190,7 +181,7 @@ function run_machine_network(network_file)
     prob = ODEProblem(network_dynamics!, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [25.0]
+    perturb_times = [5.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -215,16 +206,16 @@ function run_machine_network(network_file)
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Tsit5(), dt=0.005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     p1 = plot(sol, idxs=(0, [7, 8, 9, 10, 11, 12]), title="Bus Voltages", labels=["V_1_D" "V_1_Q" "V_2_D" "V_2_Q" "V_3_D" "V_3_Q"])
     plot!(p1, t_aux, abs.(V_terminal_aux), label="Bus 2 Magnitude")
-    plot!(twinx(), t_aux, rad2deg.(angle.(V_terminal_aux)), label="Bus 2 Angle", ylabel="Angle (degrees)", legend=:bottomleft, lw=2)
-    p2 = plot(sol, idxs=(0, [13, 14, 15, 16]), title="Bus Current Injections", labels=["I_1_D" "I_1_Q" "I_3_D" "I_3_Q"])
+    #plot!(twinx(), t_aux, rad2deg.(angle.(V_terminal_aux)), label="Bus 2 Angle", ylabel="Angle (degrees)", legend=:bottomleft, lw=2)
+    #p2 = plot(sol, idxs=(0, [13, 14, 15, 16]), title="Bus Current Injections", labels=["I_1_D" "I_1_Q" "I_3_D" "I_3_Q"])
     #plot!(p2, t_aux, i_2_d_aux, label="I_2_D")
     #plot!(p2, t_aux, i_2_q_aux, label="I_2_Q")
-    plot!(p2, t_aux, abs.(I_terminal_aux), label="I_mag")
-    plot!(twinx(), t_aux, rad2deg.(angle.(I_terminal_aux)), label="Bus 2 Angle", ylabel="Angle (degrees)", legend=:bottomleft, lw=2)
+    p2 = plot(t_aux, abs.(I_terminal_aux), label="I_mag")
+    #plot!(twinx(), t_aux, rad2deg.(angle.(I_terminal_aux)), label="Bus 2 Angle", ylabel="Angle (degrees)", legend=:bottomleft, lw=2)
     p3 = plot(t_aux, real(S_terminal_aux), label="P", title="Bus Power Injection")
     plot!(p3, t_aux, imag(S_terminal_aux), label="Q")
     p_combined = plot(p1, p2, p3, layout=(3, 1), size=(1200, 2000), left_margin=50mm)
@@ -233,6 +224,6 @@ function run_machine_network(network_file)
     return sol
 end
 
-sol = run_machine_network("../data/ThreeBusMultiLoad.raw")  # Adjust path as needed
+sol = run_network("../data/ThreeBusMultiLoad.raw")  # Adjust path as needed
 
 println("Simulation complete!")

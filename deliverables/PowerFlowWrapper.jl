@@ -10,7 +10,7 @@ const PF = PowerFlows
 
 function get_powerflow_results(network_description)
     # TODO: Add the number of bus in the input to make the output bus configurable (for return values).
-    # # Loading the network data using power systems package
+    # Loading the network data using power systems package
     # sys = PSY.System(network_description)
 
     # # Running power flow with PowerFlows Package
