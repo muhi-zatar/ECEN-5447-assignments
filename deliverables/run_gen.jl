@@ -17,8 +17,8 @@ const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
-const PSI_D = 7                      # Algebraic
-const PSI_Q = 8                      # Algebraic
+const I_D = 7                      # Algebraic
+const I_Q = 8                      # Algebraic
 
 mutable struct MachineParams
     machine::SauerPaiMachine
@@ -54,8 +54,8 @@ function run_machine_only()
     println("ED_P: $(machine_states[ED_P])")
     println("PSI_D_PP: $(machine_states[PSI_D_PP])")
     println("PSI_Q_PP: $(machine_states[PSI_Q_PP])")
-    println("PSI_D: $(machine_states[PSI_D])")
-    println("PSI_Q: $(machine_states[PSI_Q])")
+    println("I_D: $(machine_states[I_D])")
+    println("I_Q: $(machine_states[I_Q])")
     println("Initial field voltage (Vf): $Vf_init")
     println("Initial mechanical torque (τm): $τ_m_init")
 
