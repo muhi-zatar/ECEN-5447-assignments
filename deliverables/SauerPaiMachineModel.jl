@@ -351,14 +351,14 @@ function update_machine_states!(
     # ψ_q = solution[4]
 
     # TODO: This is wrong – need to revisit
-
-    # println("V_RI = $V_RI")
+    i_d = (1.0 / Xd_pp) * (γ_d1 * eq_p - ψ_d + (1 - γ_d1) * ψd_pp)
+    i_q = (1.0 / Xq_pp) * (-γ_q1 * ed_p - ψ_q + (1 - γ_q1) * ψq_pp)
+    #println("V_RI = $V_RI")
     # println("V_DQ = $(complex(v_d, v_q))")
     # println("I_DQ = $(complex(i_d, i_q))")
     # println("ψ_d = $ψ_d")
     # println("ψ_q = $ψ_q")
-    i_d = (1.0 / Xd_pp) * (γ_d1 * eq_p - ψ_d + (1 - γ_d1) * ψd_pp)
-    i_q = (1.0 / Xq_pp) * (-γ_q1 * ed_p - ψ_q + (1 - γ_q1) * ψq_pp)
+
     # Calculate electrical torque
     τ_e = ψ_d * i_q - ψ_q * i_d
 
@@ -394,8 +394,10 @@ function update_machine_states!(
     derivatives[PSI_D_PP] = (1.0 / machine.Td0_pp) * (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
     derivatives[PSI_Q_PP] = (1.0 / machine.Tq0_pp) * (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
 
-    derivatives[PSI_D] = ω * ψ_q - R * i_d - v_d
-    derivatives[PSI_Q] = -ω * ψ_d - R * i_q - v_q
+    # Synchronous flux derivatives (Eq 15.9)
+    derivatives[PSI_D] = (2.0 * π * f0) * (ω * ψ_q + R * i_d + v_d)
+    derivatives[PSI_Q] = (2.0 * π * f0) * (-ω * ψ_d + R * i_q + v_q)
+
     # Calculate power at the bus to return
     p_bus = v_d * i_d + v_q * i_q       # Milano Eq. 15.2
     q_bus = v_q * i_d - v_d * i_q       # Milano Eq. 15.3

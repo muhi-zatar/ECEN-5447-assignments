@@ -135,9 +135,14 @@ function run_machine_network(network_file)
     push!(i_2_q_aux, i_2_q_init)
 
     function machine_network_dynamics!(du, u, params, t)
+        #println("t=$t")
         # Extract states for each component
         network_states = u[params.network_idx]
         machine_states = u[params.machine_idx]
+
+        # Try rounding to 6 decimal places
+        network_states = round.(network_states, sigdigits=6)
+        machine_states = round.(machine_states, sigdigits=6)
 
         # Arrays for derivatives
         du_network = similar(network_states, length(params.network_idx))
@@ -146,9 +151,10 @@ function run_machine_network(network_file)
         # Calculate terminal voltage from current states (to use in update_machine_states!)
         v_2_d = network_states[V_2_D_IDX]
         v_2_q = network_states[V_2_Q_IDX]
-        
 
-        V_terminal = (v_2_d + im * v_2_q) * exp(-im *π / 2)
+
+        V_terminal = (v_2_d + im * v_2_q) * exp(-im * π / 2)
+        #println("V_terminal = $V_terminal")
 
         # Update the states of each component
         _, S_terminal_machine, _, _, _ = update_machine_states!(
@@ -183,6 +189,11 @@ function run_machine_network(network_file)
         if abs(t - round(t)) < 0.001
             println("t=$t: δ=$(machine_states[DELTA]), ω=$(machine_states[OMEGA]), τm=$(params.τm), Vf=$(params.Vf), V_terminal=$V_terminal, S_terminal=$S_terminal_machine")
         end
+
+        # if t > 0.02
+        #     exit()
+        # end
+
     end
 
     tspan = (0.0, 25.0)
