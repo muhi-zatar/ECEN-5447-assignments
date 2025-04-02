@@ -108,10 +108,22 @@ function run_network(network_file)
     V_terminal_aux = Complex{Float64}[]
     S_terminal_aux = Complex{Float64}[]
     I_terminal_aux = Complex{Float64}[]
+    i_1_d_aux = Float64[]
+    i_1_q_aux = Float64[]
+    i_2_d_aux = Float64[]
+    i_2_q_aux = Float64[]
+    i_3_d_aux = Float64[]
+    i_3_q_aux = Float64[]
     push!(t_aux, 0.0)
     push!(V_terminal_aux, V_terminal)
     push!(S_terminal_aux, complex(P, Q))
     push!(I_terminal_aux, I_terminal_init)
+    push!(i_1_d_aux, network_states[I_12_D_IDX])
+    push!(i_1_q_aux, network_states[I_12_Q_IDX])
+    push!(i_2_d_aux, network_states[I_23_D_IDX])
+    push!(i_2_q_aux, network_states[I_23_D_IDX])
+    push!(i_3_d_aux, network_states[I_13_D_IDX])
+    push!(i_3_q_aux, network_states[I_13_Q_IDX])
 
     function network_dynamics!(du, u, params, t)
         network_states = u[params.network_idx]
@@ -151,6 +163,12 @@ function run_network(network_file)
         push!(V_terminal_aux, V_terminal)
         push!(S_terminal_aux, S_new)
         push!(I_terminal_aux, I_terminal)
+        push!(i_1_d_aux, network_states_f64[I_12_D_IDX])
+        push!(i_1_q_aux, network_states_f64[I_12_Q_IDX])
+        push!(i_2_d_aux, network_states_f64[I_23_D_IDX])
+        push!(i_2_q_aux, network_states_f64[I_23_Q_IDX])
+        push!(i_3_d_aux, network_states_f64[I_13_D_IDX])
+        push!(i_3_q_aux, network_states_f64[I_13_Q_IDX])
 
         # Copy derivatives to output
         du[p.network_idx] .= du_network
@@ -199,7 +217,13 @@ function run_network(network_file)
 
     p1 = plot(sol, idxs=(0, [7, 8, 9, 10, 11, 12]), title="Bus Voltages", labels=["V_1_D" "V_1_Q" "V_2_D" "V_2_Q" "V_3_D" "V_3_Q"])
     plot!(p1, t_aux, abs.(V_terminal_aux), label="Bus 2 Magnitude")
-    p2 = plot(t_aux, abs.(I_terminal_aux), label="I_mag")
+    p2 = plot(t_aux, abs.(I_terminal_aux), label="I_mag", title="Bus Currents")
+    plot!(p2, t_aux, i_1_d_aux, label="I_12_D")
+    plot!(p2, t_aux, i_1_q_aux, label="I_12_Q")
+    plot!(p2, t_aux, i_2_d_aux, label="I_23_D")
+    plot!(p2, t_aux, i_2_q_aux, label="I_23_Q")
+    plot!(p2, t_aux, i_3_d_aux, label="I_13_D")
+    plot!(p2, t_aux, i_3_q_aux, label="I_13_Q")
     p3 = plot(t_aux, real(S_terminal_aux), label="P", title="Bus Power Injection")
     plot!(p3, t_aux, imag(S_terminal_aux), label="Q")
     p_combined = plot(p1, p2, p3, layout=(3, 1), size=(1200, 2000), left_margin=50mm)
