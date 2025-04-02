@@ -380,6 +380,8 @@ function update_machine_states!(
     p_bus = v_d * i_d + v_q * i_q       # Milano Eq. 15.2
     q_bus = v_q * i_d - v_d * i_q       # Milano Eq. 15.3
     S_bus = complex(p_bus, q_bus)
+    # Debugging
+    println("S_bus = $S_bus")
 
     # Calculate current in positive sequence
     I_RI = conj(S_bus / V_terminal)
