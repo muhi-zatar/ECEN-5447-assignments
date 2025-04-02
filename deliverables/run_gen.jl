@@ -103,6 +103,11 @@ function run_machine_only()
     # Build function
     explicitDAE_M = ODEFunction(machine_dynamics!, mass_matrix=mass_matrix)
 
+    # Test initial conditions
+    u0 = deepcopy(machine_states)
+    du0 = zeros(Float64, length(machine_states))
+    explicitDAE_M(du0, u0, p, 0)
+
     tspan = (0.0, 25.0)
     prob = ODEProblem(explicitDAE_M, machine_states, tspan, p)
 
