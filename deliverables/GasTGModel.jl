@@ -26,134 +26,99 @@ mutable struct GasTG
     # Constructor with default values
     function GasTG(;
         R=0.05,
-        T1=0.4,
-        T2=0.1,
-        T3=3.0,
+        T1=0.2,
+        T2=0.2,
+        T3=2.0,
         D_turb=0.0,
         AT=1.0,
-        KT=2.0,
-        V_min=0.0,
-        V_max=1.0,
+        KT=2.5,
+        V_min=0.01,
+        V_max=1.1,
         P_ref=1.0
     )
         return new(R, T1, T2, T3, D_turb, AT, KT, V_min, V_max, P_ref)
     end
 end
 
-
-#The below equations are from the diagram in PowerWorld following link:
-# https://www.powerworld.com/WebHelp/Content/TransientModels_HTML/Governor%20GAST_PTI%20and%20GASTD.htm
-
-
-
-# Helper functions for the governor blocks
-# When checked against Jose's implementation in the julia package, they are not the same.
-# Bunch of helper functions for the AVR blocks
-function low_pass(input, state, gain, time_constant)
-    if time_constant > 0.0
-        output = state
-        derivative = (gain * input - state) / time_constant
-        return derivative
-    else
-        # For zero time constant, output follows input
-        return 0.0
-    end
-end
-
-function low_pass_nonwindup(input, state, gain, time_constant, min_val, max_val)
-    if time_constant > 0.0
-        # Limit the state value
-        limited_state = clamp(state, min_val, max_val)
-        derivative = (gain * input - limited_state) / time_constant
-
-        # Anti-windup logic
-        if (limited_state >= max_val && derivative > 0.0) ||
-           (limited_state <= min_val && derivative < 0.0)
-            derivative = 0.0
-        end
-
-        return limited_state, derivative
-    else
-        # For zero time constant, output = gain * input (algebraic)
-        output = clamp(gain * input, min_val, max_val)
-        return output, 0.0
-    end
-end
-
-function clamp(value, min_val, max_val)
-    return max(min(value, max_val), min_val)
-end
-# END OF HELPER FUNCTIONS
-
-
-# The module has two functions:
-# Initializing states, and updating states
-# This will help us in scalability
-
 # Initialize governor states
 function initialize_gov(gov::GasTG, τ_m_init::Float64, ω_init::Float64)
-
     # This function will initialize the governor states based on the steady-state rotor angular
-    # velocity and the steady-state mechanical torque (both calculated by initialize_machine)
+    # velocity and the steady-state mechanical torque
 
     # Extract governor states
     states = zeros(Float64, 3)
 
-    # Populate
+    # Initialize all states to the initial torque value
+    # This assumes steady-state initial conditions
     states[FV_IDX] = τ_m_init
     states[FF_IDX] = τ_m_init
     states[ET_IDX] = τ_m_init
 
-    # Return things
+    # Return initialized states
     return states
 end
 
-# Update governor states
+# Update governor states using state space formulation
 function update_gov_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
     omega::Float64,
     gov::GasTG
 )
-    # Extract governor states
+    # Extract state variables from the state vector:
+    # x₁ = Fuel Valve (FV) - Output of the second integrator with time constant T₂
     fv = states[FV_IDX]
+
+    # x₂ = Fuel Flow (FF) - Output of the first integrator with time constant T₁
     ff = states[FF_IDX]
+
+    # x₃ = Exhaust Temperature (ET) - Output of the third integrator with time constant T₃
     et = states[ET_IDX]
 
-    # Calculate inverse droop (avoid division by zero) for numerical imstabilities faced when running the simulation
+    # Calculate speed error (delta omega)
+    # Δω = ω - ωref where ωref = 1.0 (per unit)
+    delta_omega = omega - 1.0
+
+    # Calculate inverse droop (1/R)y
     inv_R = gov.R < eps() ? 0.0 : 1.0 / gov.R
 
-    # Printing this value to make sure it is feasile
-    #println(inv_R)
+    # Calculate inputs for the two paths
+    # Power reference path: Pref - (1/R)Δω
+    power_reference_input = gov.P_ref - inv_R * delta_omega
 
-    # Speed governor input calculation
-    # TODO: replace 1.0 with \omega ref if needed.
-    speed_error = omega - 1.0
-    reference_power = gov.P_ref
-    speed_governing = inv_R * speed_error
+    # Temperature limit path: AT + KT(AT - ET)
+    temperature_limit_input = gov.AT + gov.KT * (gov.AT - et)
 
-    # Temperature control limiter
-    temperature_limit = gov.AT + gov.KT * (gov.AT - et)
+    # Determine active path using MIN function from the diagram
+    governor_input = min(power_reference_input, temperature_limit_input)
 
-    # Take minimum of power reference and temperature limit (LV logic gate)
-    governor_input = min(reference_power - speed_governing, temperature_limit)
+    # State equations expressed in standard form
 
-    # Process through low pass filters with anti-windup
-    ff_sat, dff_dt = low_pass_nonwindup(governor_input, ff, 1.0, gov.T1, gov.V_min, gov.V_max)
+    # dFF/dt equation (Fuel Flow - state x2)
+    # ẋ₂ = (governor_input - x₂)/T₁
+    # where governor_input = min(Pref - (1/R)Δω, AT + KT(AT - x₃))
+    dff_dt = (governor_input - ff) / gov.T1
 
-    dfv_dt = low_pass(ff_sat, fv, 1.0, gov.T2)
-    det_dt = low_pass(fv, et, 1.0, gov.T3)
+    # dFV/dt equation (Fuel Valve - state x1)
+    # ẋ₁ = (x₂ - x₁)/T₂
+    dfv_dt = (ff - fv) / gov.T2
 
-    # Update derivatives
+    # dET/dt equation (Exhaust Temperature - state x3)
+    # ẋ₃ = (x₁ - x₃)/T₃
+    det_dt = (fv - et) / gov.T3
+
+    # Update derivatives vector
     derivatives[FV_IDX] = dfv_dt
     derivatives[FF_IDX] = dff_dt
     derivatives[ET_IDX] = det_dt
 
     # Calculate mechanical power output
-    # TODO: Check this since D_turb is 0.0
-    Pm = fv - gov.D_turb * speed_error
+    # Pm = x₁ - D_turb·Δω
+    # The mechanical power is the fuel valve position minus the damping term
+    Pm = fv - gov.D_turb * delta_omega
 
     # Calculate mechanical torque (P = ω * τ, so τ = P/ω)
+    # Convert from power to torque for the mechanical system
     τm = Pm / omega
 
     return τm

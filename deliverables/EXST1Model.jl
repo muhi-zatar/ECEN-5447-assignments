@@ -1,171 +1,115 @@
-# defining the module
+# Defining the module
 module EXST1Model
 
-# Exporting the objects and functions
+# Exporting the needed functions
 export EXST1, initialize_avr, update_avr_states!
 
 # AVR state indices
-const VF_IDX = 1
-const VT_IDX = 2
-const VLL_IDX = 3
-const VFB_IDX = 4
+const EFD_IDX = 1   # Field voltage (output of amplifier)
+const VS_IDX = 2    # Sensed terminal voltage
+const VLL_IDX = 3   # Lead-lag output
+const VF_IDX = 4    # Feedback signal
 
-# EXST1 Automatic Voltage Regulator model structure
+# IEEE Type ST1 excitation system model structure
 mutable struct EXST1
     # AVR parameters
-    # As defined in the PowerWorld document
-    Tr::Float64      # Filter time constant
-    Vi_min::Float64  # Input limits minimum
-    Vi_max::Float64  # Input limits maximum
-    Tc::Float64      # Lag numerator time constant
-    Tb::Float64      # Lag denominator time constant
-    Ka::Float64      # Amplifier gain
-    Ta::Float64      # Voltage Regulator time constant
-    Vr_min::Float64  # Maximum Control element output
-    Vr_max::Float64  # Minimum Control element output
-    Kc::Float64      # Rectifier loading factor
-    Kf::Float64      # Rate feedback gain
-    Tf::Float64      # Rate feedback time constant
-    V_ref::Float64   # Reference voltage
-    V_ss::Float64     # Stabilizer Output
+    TR::Float64      # Voltage measurement time constant (s)
+    TB::Float64      # Lead-lag denominator time constant (s)
+    TC::Float64      # Lead-lag numerator time constant (s)
+    KF::Float64      # Feedback gain (pu)
+    TF::Float64      # Feedback time constant (s)
+    KA::Float64      # Amplifier gain (pu)
+    TA::Float64      # Amplifier time constant (s)
+    KC::Float64      # Rectifier loading factor related to commutating reactance (pu)
+    V_ref::Float64   # Reference Voltage
 
-    # Constructor with given values in the project description
+    # Constructor with default values
     function EXST1(;
-        Tr=0.01,
-        Vi_min=-5.0,
-        Vi_max=5.0,
-        Tc=10.0,
-        Tb=20.0,
-        Ka=200.0,
-        Ta=0.1,
-        Vr_min=0,
-        Vr_max=6,
-        Kc=0.0,
-        Kf=0.0,
-        Tf=0.1,
-        V_ref=1.0,
-        V_ss=0.0
+        TR=0.01,
+        TB=20.0,
+        TC=10.0,
+        KF=0.0,
+        TF=0.1,
+        KA=200.0,
+        TA=0.1,
+        KC=0.0,
+        V_ref=1.0
     )
-        return new(Tr, Vi_min, Vi_max, Tc, Tb, Ka, Ta, Vr_min, Vr_max, Kc, Kf, Tf, V_ref)
+        return new(TR, TB, TC, KF, TF, KA, TA, KC, V_ref)
     end
 end
 
-function clamp(value, min_val, max_val)
-    return max(min(value, max_val), min_val)
-end
-
-function low_pass_mass_matrix(input, state, gain, time_constant)
-    if time_constant > 0.0
-        derivative = (gain * input - state) / time_constant
-        return gain * input, derivative
-    else
-        return gain * input, 0.0
-    end
-end
-
-
-
-function high_pass(input, state, gain, time_constant)
-    if time_constant > 0.0
-        derivative = (input - state) / time_constant
-        new_state = state + derivative
-        output = gain * new_state
-        return output, derivative
-    else
-        return 0.0, 0.0
-    end
-end
-
-function lead_lag_mass_matrix(input, state, gain, t_numerator, t_denominator)
-    if t_denominator > 0.0
-        output = (gain * t_numerator * input + state * (t_denominator - t_numerator)) / t_denominator
-        derivative = (input - state) / t_denominator
-        return output, derivative
-    else
-        return gain * input, 0.0
-    end
-end
-
-
-
-# END OF HELPER FUNCTIONS
-
-
-# The module has two functions:
-# Initializing states, and updating states
-# This will help us in scalability
-
-
-# This function will initialize the AVR states based on the steady-state terminal voltage and the
-# steady-state field voltage (as calculated by initialize_machine)
-
-# Initialize AVR states
-function initialize_avr(avr::EXST1, V_terminal_magnitude, V_f_init)
-
-    # Set V_ref to field voltage calculated from initial power flow solution (this was set to V_f_init, I think it is wrong)
-    avr.V_ref = V_terminal_magnitude
-
-    # Set V_ss
-    avr.V_ss = V_f_init / avr.Ka
-
-    # Define empty states vector to populate
+# Initialize AVR states for proper steady-state equilibrium
+function initialize_avr(avr::EXST1, Vt_init::Float64, Efd_init::Float64)
+    # Initialize state vector
     states = zeros(Float64, 4)
 
-    # Extract AVR states
-    states[VF_IDX] = V_f_init
-    states[VT_IDX] = V_terminal_magnitude
-    states[VLL_IDX] = V_f_init / avr.Ka
-    states[VFB_IDX] = 0
+    # Terminal voltage sensing
+    states[VS_IDX] = Vt_init
+
+    # For defd_dt = 0: KA*vll = efd
+    states[VLL_IDX] = Efd_init / avr.KA
+
+    # For dvll_dt = 0: (verr * (1.0 + TC/TB) - vll) = 0
+    # Solving for verr: verr = vll / (1.0 + TC/TB)
+    steady_state_verr = states[VLL_IDX] / (1.0 + avr.TC / avr.TB)
+
+    # For dvf_dt = 0: vf = 0 (if defd_dt = 0)
+    states[VF_IDX] = 0.0
+
+    # Set Vref to achieve the required steady-state error
+    # verr = Vref - vs - vf => Vref = verr + vs + vf
+    avr.V_ref = steady_state_verr + states[VS_IDX] + states[VF_IDX]
+    println("V_ref value is: $(avr.V_ref)")
+    # Field voltage
+    states[EFD_IDX] = Efd_init
 
     return states
 end
 
+# Update AVR states using state space formulation with stability focus
 function update_avr_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
-    V_terminal_magnitude::Float64,
-    avr::EXST1
+    Vt::Float64,
+    avr::EXST1,
 )
+    # Extract state variables
+    efd = states[EFD_IDX]
+    vs = states[VS_IDX]
+    vll = states[VLL_IDX]
+    vf = states[VF_IDX]
 
-    # Steps for calculation:
-    # Step 1:Sense the Terminal Voltage and Apply a Low-Pass Filter (Block 2 in the Diagram)
-    # Step 2: Compute the Voltage Error # Summation Block 
-    # Step 3: Apply Lead-Lag Compensation (Block 3 in the Diagram (Lead-Lag Filter))
-    # Step 4: Amplifier Response ( Block 1 in the Diagram )
-    # Step 5: Compute Field Voltage
-    # step 6: Apply Rate Feedback for Damping
-    # Step 7: update derivates
-    # Extract AVR states
-    Vf = states[VF_IDX]
-    Vt = states[VT_IDX]
-    Vll = states[VLL_IDX]
-    Vfb = states[VFB_IDX]
+    # Calculate voltage error
+    # VERR = Vref - VS - VF
+    verr = avr.V_ref - vs - vf
 
-    Vt_filtered, dVt_dt = low_pass_mass_matrix(V_terminal_magnitude, Vt, 1.0, avr.Tr)
+    # State equations
 
-    y_hp, dVfb_dt = high_pass(Vf, Vfb, avr.Kf, avr.Tf)
+    # Measured terminal voltage 
+    # With time constant TR
+    dvs_dt = (Vt - vs) / avr.TR
 
-    # Added stabilizer
-    V_err = avr.V_ref - Vt_filtered
-    compensator_input = V_err + avr.V_ss - y_hp
+    # Lead-lag compensator 
+    # Transfer function (1+sTC)/(1+sTB)
+    dvll_dt = ((verr * (1.0 + avr.TC / avr.TB)) - vll) / avr.TB
 
-    y_ll, dVll_dt = lead_lag_mass_matrix(compensator_input, Vll, 1.0, avr.Tc, avr.Tb)
+    # Amplifier 
+    # With gain KA and time constant TA
+    defd_dt = (avr.KA * vll - efd) / avr.TA
 
-    # From regulator
-    _, dVf_dt = low_pass_mass_matrix(y_ll, Vf, avr.Ka, avr.Ta)
+    # Feedback path 
+    # Calculate from the block diagram
+    dvf_dt = (avr.KF * (avr.KA * vll - efd) / avr.TA - vf) / avr.TF
 
-    # Without clamping
-    # Vf_new = V_reg
-    # dVf_dt = (Vf_new - Vf) / avr.Ta
+    # Update derivatives vector
+    derivatives[EFD_IDX] = defd_dt
+    derivatives[VS_IDX] = dvs_dt
+    derivatives[VLL_IDX] = dvll_dt
+    derivatives[VF_IDX] = dvf_dt
 
-    derivatives[VF_IDX] = dVf_dt
-    derivatives[VT_IDX] = dVt_dt
-    derivatives[VLL_IDX] = dVll_dt
-    derivatives[VFB_IDX] = dVfb_dt
-
-    return
+    # Output is the field voltage
+    return efd
 end
-
-
 
 end # module
