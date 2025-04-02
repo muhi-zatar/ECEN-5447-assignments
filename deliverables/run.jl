@@ -8,6 +8,7 @@ Pkg.activate("../.")
 # Importing the required librarires
 using DifferentialEquations
 using Plots
+using Plots.PlotMeasures
 using LinearAlgebra
 
 # Import our custom modules from other files
@@ -26,10 +27,8 @@ using .PowerFlowWrapper
 
 
 # Definining some constants
-const BUS_INFINITE_BUS = 1
-const BUS_MACHINE_MODEL = 2
-const BUS_LOAD = 3
-const NUM_STATES = 22
+# Network state indices
+const NUM_STATES_NETWORK = 22
 const I_12_D_IDX = 1
 const I_12_Q_IDX = 2
 const I_13_D_IDX = 3
@@ -52,6 +51,8 @@ const I_B2_D_IDX = 19
 const I_B2_Q_IDX = 20
 const I_B3_D_IDX = 21
 const I_B3_Q_IDX = 22
+# Machine state indices
+const NUM_STATES_MACHINE = 8
 const DELTA = 1
 const OMEGA = 2
 const EQ_P = 3
@@ -61,14 +62,78 @@ const PSI_Q_PP = 6
 const PSI_D = 7
 const PSI_Q = 8
 # AVR state indices
+const NUM_STATES_AVR = 4
 const EFD_IDX = 1   # Field voltage (output of amplifier)
 const VS_IDX = 2    # Sensed terminal voltage
 const VLL_IDX = 3   # Lead-lag output
 const VF_IDX = 4    # Feedback signal
 # Governor state indices
+const NUM_STATES_GOVERNOR = 3
 const FV_IDX = 1                # Fuel value
 const FF_IDX = 2                # Fuel flow
 const ET_IDX = 3                # Exhaust temp
+
+# Create a mapping of local indices to global indices
+network_start = 1
+machine_start = network_start + NUM_STATES_NETWORK
+avr_start = machine_start + NUM_STATES_MACHINE
+governor_start = avr_start + NUM_STATES_AVR
+
+# Network indices
+network_map = Dict(
+    :I_12_D_IDX => network_start + I_12_D_IDX - 1,
+    :I_12_Q_IDX => network_start + I_12_Q_IDX - 1,
+    :I_13_D_IDX => network_start + I_13_D_IDX - 1,
+    :I_13_Q_IDX => network_start + I_13_Q_IDX - 1,
+    :I_23_D_IDX => network_start + I_23_D_IDX - 1,
+    :I_23_Q_IDX => network_start + I_23_Q_IDX - 1,
+    :V_1_D_IDX => network_start + V_1_D_IDX - 1,
+    :V_1_Q_IDX => network_start + V_1_Q_IDX - 1,
+    :V_2_D_IDX => network_start + V_2_D_IDX - 1,
+    :V_2_Q_IDX => network_start + V_2_Q_IDX - 1,
+    :V_3_D_IDX => network_start + V_3_D_IDX - 1,
+    :V_3_Q_IDX => network_start + V_3_Q_IDX - 1,
+    :I_1_D_IDX => network_start + I_1_D_IDX - 1,
+    :I_1_Q_IDX => network_start + I_1_Q_IDX - 1,
+    :I_3_D_IDX => network_start + I_3_D_IDX - 1,
+    :I_3_Q_IDX => network_start + I_3_Q_IDX - 1,
+    :I_B1_D_IDX => network_start + I_B1_D_IDX - 1,
+    :I_B1_Q_IDX => network_start + I_B1_Q_IDX - 1,
+    :I_B2_D_IDX => network_start + I_B2_D_IDX - 1,
+    :I_B2_Q_IDX => network_start + I_B2_Q_IDX - 1,
+    :I_B3_D_IDX => network_start + I_B3_D_IDX - 1,
+    :I_B3_Q_IDX => network_start + I_B3_Q_IDX - 1
+)
+
+# Machine indices
+machine_map = Dict(
+    :DELTA => machine_start + DELTA - 1,
+    :OMEGA => machine_start + OMEGA - 1,
+    :EQ_P => machine_start + EQ_P - 1,
+    :ED_P => machine_start + ED_P - 1,
+    :PSI_D_PP => machine_start + PSI_D_PP - 1,
+    :PSI_Q_PP => machine_start + PSI_Q_PP - 1,
+    :PSI_D => machine_start + PSI_D - 1,
+    :PSI_Q => machine_start + PSI_Q - 1
+)
+
+# AVR indices
+avr_map = Dict(
+    :EFD_IDX => avr_start + EFD_IDX - 1,
+    :VS_IDX => avr_start + VS_IDX - 1,
+    :VLL_IDX => avr_start + VLL_IDX - 1,
+    :VF_IDX => avr_start + VF_IDX - 1
+)
+
+# Governor indices
+governor_map = Dict(
+    :FV_IDX => governor_start + FV_IDX - 1,
+    :FF_IDX => governor_start + FF_IDX - 1,
+    :ET_IDX => governor_start + ET_IDX - 1
+)
+
+# Combine into a single mapping
+global_map = merge(network_map, machine_map, avr_map, governor_map)
 
 # Matrix transformation functions
 # These are used to convert between rectangular and polar coordinates
@@ -89,6 +154,132 @@ function dq_ri(δ::T) where {T<:Number}
     ]
 end
 
+function ri_dq_vector(d_values, q_values)
+    # Map the network D and Q values onto real and imaginary axes
+    RI_values = map((v_d, v_q) -> dq_ri(0.0) * [v_d; v_q], d_values, q_values)
+
+    # Take the magnitude (useful for voltage)
+    mag = map(V -> hypot(V[1], V[2]), RI_values)
+
+    return RI_values, mag
+end
+
+function compute_S_vector(v_RI_values, i_RI_values)
+    # Compute apparent power based on vectors of real and imaginary voltage and current
+    S_values = map((V, I) -> [
+            V[1] * I[1] + V[2] * I[2];  # P = V_R * I_R + V_I * I_I
+            V[2] * I[1] - V[1] * I[2]   # Q = V_I * I_R - V_R * I_I
+        ], v_RI_values, i_RI_values)
+
+    return S_values
+end
+
+function make_plots(sol)
+    # Collect vectors for plotting
+    t = sol.t
+
+    # Shaft states
+    delta_values =
+        omega_values =
+
+        # Voltages
+            v_1_d_values = [sol[global_map[:V_1_D_IDX], i] for i in 1:length(t)]
+    v_1_q_values = [sol[global_map[:V_1_Q_IDX], i] for i in 1:length(t)]
+    v_2_d_values = [sol[global_map[:V_2_D_IDX], i] for i in 1:length(t)]
+    v_2_q_values = [sol[global_map[:V_2_Q_IDX], i] for i in 1:length(t)]
+    v_3_d_values = [sol[global_map[:V_3_D_IDX], i] for i in 1:length(t)]
+    v_3_q_values = [sol[global_map[:V_3_Q_IDX], i] for i in 1:length(t)]
+
+    # Transform D,Q vectors into R,I vectors and their magnitudes
+    v_1_RI_values, v_1_magnitude = ri_dq_vector(v_1_d_values, v_1_q_values)
+    v_2_RI_values, v_2_magnitude = ri_dq_vector(v_2_d_values, v_2_q_values)
+    v_3_RI_values, v_3_magnitude = ri_dq_vector(v_3_d_values, v_3_q_values)
+
+    # Injected currents
+    i_1_d_values = [sol[global_map[:I_1_D_IDX], i] for i in 1:length(t)]
+    i_1_q_values = [sol[global_map[:I_1_Q_IDX], i] for i in 1:length(t)]
+    i_3_d_values = [sol[global_map[:I_3_D_IDX], i] for i in 1:length(t)]
+    i_3_q_values = [sol[global_map[:I_3_Q_IDX], i] for i in 1:length(t)]
+
+    i_1_RI_values, _ = ri_dq_vector(i_1_d_values, i_1_q_values)
+    i_3_RI_values, _ = ri_dq_vector(i_3_d_values, i_3_q_values)
+
+    # Line currents
+    i_12_d_values = [sol[global_map[:I_12_D_IDX], i] for i in 1:length(t)]
+    i_12_q_values = [sol[global_map[:I_12_Q_IDX], i] for i in 1:length(t)]
+    i_23_d_values = [sol[global_map[:I_23_D_IDX], i] for i in 1:length(t)]
+    i_23_q_values = [sol[global_map[:I_23_Q_IDX], i] for i in 1:length(t)]
+    i_13_d_values = [sol[global_map[:I_13_D_IDX], i] for i in 1:length(t)]
+    i_13_q_values = [sol[global_map[:I_13_Q_IDX], i] for i in 1:length(t)]
+
+    i_12_RI_values, i_12_mag = ri_dq_vector(i_12_d_values, i_12_q_values)
+    i_23_RI_values, i_23_mag = ri_dq_vector(i_23_d_values, i_23_q_values)
+    i_13_RI_values, i_13_mag = ri_dq_vector(i_13_d_values, i_13_q_values)
+
+    # Compute power injections
+    S_1_values = compute_S_vector(v_1_RI_values, i_1_RI_values)
+    S_3_values = compute_S_vector(v_3_RI_values, i_3_RI_values)
+
+    # Create plots - Just as an example, 90% of them are not needed
+    # Plot shaft states
+    p1 = plot(t, [sol[global_map[:DELTA], i] for i in 1:length(t)],
+        label="Rotor angle (δ)", title="Machine States", linewidth=2, left_margin=10mm)
+    savefig(p1, "../results/rotor_angle.png")
+
+    p2 = plot(t, [sol[global_map[:OMEGA], i] for i in 1:length(t)],
+        label="Rotor speed (ω)", linewidth=2, left_margin=10mm)
+    savefig(p2, "../results/rotor_speed.png")
+
+    # Plot fluxes
+    p3 = plot(t, [sol[global_map[:EQ_P], i] for i in 1:length(t)],
+        label="eq'", title="Machine Fluxes", linewidth=2, left_margin=10mm)
+    plot!(p3, t, [sol[global_map[:ED_P], i] for i in 1:length(t)],
+        label="ed'", linewidth=2)
+    plot!(p3, t, [sol[global_map[:PSI_D_PP], i] for i in 1:length(t)],
+        label="ψd''", linewidth=2)
+    plot!(p3, t, [sol[global_map[:PSI_Q_PP], i] for i in 1:length(t)],
+        label="ψq''", linewidth=2)
+    savefig(p3, "../results/fluxes.png")
+
+    # Plot avr states
+    p4 = plot(t, [sol[global_map[:EFD_IDX], i] for i in 1:length(t)],
+        label="Field Voltage", title="AVR States", linewidth=2, left_margin=10mm)
+    plot!(p4, t, [sol[global_map[:VS_IDX], i] for i in 1:length(t)],
+        label="Sensed Terminal Voltage", linewidth=2)
+    plot!(p4, t, [sol[global_map[:VLL_IDX], i] for i in 1:length(t)],
+        label="Lead-Lag State", linewidth=2)
+    plot!(p4, t, [sol[global_map[:VF_IDX], i] for i in 1:length(t)],
+        label="Feedback State", linewidth=2)
+    savefig(p4, "../results/avr_states.png")
+
+    # Plot governor states
+    p5 = plot(t, [sol[global_map[:FV_IDX], i] for i in 1:length(t)],
+        label="Fuel Value", title="Governor States", linewidth=2, left_margin=10mm)
+    plot!(p5, t, [sol[global_map[:FF_IDX], i] for i in 1:length(t)],
+        label="Fuel Flow", linewidth=2)
+    plot!(p5, t, [sol[global_map[:ET_IDX], i] for i in 1:length(t)],
+        label="Exhaust Temp", linewidth=2)
+    savefig(p5, "../results/gov_states.png")
+
+    # Plot line currents
+    p6 = plot(t, i_12_mag, title="Line Currents", label="I_12", linewith=2, left_margin=10mm)
+    plot!(p6, t, i_23_mag, label="I_23", linewith=2)
+    plot!(p6, t, i_13_mag, label="I_13", linewith=2)
+    savefig(p6, "../results/line_currrents.png")
+
+    # Plot bus voltages
+    p7 = plot(t, v_1_magnitude, label="Infinite Bus", linewidth=2, title="Bus Voltage Magnitudes", left_margin=10mm)
+    plot!(p7, t, v_2_magnitude, label="Machine Bus", linewidth=2)
+    plot!(p7, t, v_3_magnitude, label="Load Bus", linewidth=2)
+    savefig(p7, "../results/bus_voltages.png")
+
+    # Plot powers
+    p8 = plot(t, first.(S_1_values), label="Inf. Bus (P)", linewidth=2, title="Bus Power", left_margin=10mm)
+    plot!(p8, t, last.(S_1_values), label="Inf. Bus (Q)", linewidth=2)
+    plot!(p8, t, first.(S_3_values), label="Load (P)", linewidth=2)
+    plot!(p8, t, last.(S_3_values), label="Load (Q)", linewidth=2)
+    savefig(p8, "../results/powers.png")
+end
 
 # Define parameters for ODE solver
 struct ODEParams
@@ -274,16 +465,16 @@ function run_simulation(network_file)
     function affect!(integrator)
         #### Uncomment the desired perturbation ####
         # Load Jump
-        #integrator.p.network.Z_L *= 1.15
+        integrator.p.network.Z_L *= 0.85
 
         # Load Decrease
-        #integrator.p.network.Z_L *= 0.85
+        #integrator.p.network.Z_L *= 1.15
 
         # Line Trip
-        integrator.p.network.R_12 = 1e6
-        integrator.p.network.X_12 = 1e6
-        integrator.p.network.B_1 *= 0.5
-        integrator.p.network.B_2 *= 0.5
+        # integrator.p.network.R_12 = 1e6
+        # integrator.p.network.X_12 = 1e6
+        # integrator.p.network.B_1 *= 0.5
+        # integrator.p.network.B_2 *= 0.5
     end
 
     # Create a Callback function that represents the perturbation
@@ -293,58 +484,7 @@ function run_simulation(network_file)
     sol = solve(prob, Rodas5(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     # Process results
-    t = sol.t
-    delta_values = [sol[machine_idx[1], i] for i in 1:length(t)]
-    omega_values = [sol[machine_idx[2], i] for i in 1:length(t)]
-    Vf_values = [sol[avr_idx[1], i] for i in 1:length(t)]
-
-    # Create plots - Just as an example, 90% of them are not needed
-    # Plot shaft states
-    p1 = plot(t, delta_values,
-        label="Rotor angle (δ)", title="Machine States", linewidth=2)
-    plot!(p1, t, omega_values,
-        label="Rotor speed (ω)", linewidth=2)
-    savefig(p1, "../results/shaft_states.png")
-
-    # Plot fluxes
-    p2 = plot(t, [sol[machine_idx[3], i] for i in 1:length(t)],
-        label="eq'", title="Machine Fluxes", linewidth=2)
-    plot!(p2, t, [sol[machine_idx[4], i] for i in 1:length(t)],
-        label="ed'", linewidth=2)
-    plot!(p2, t, [sol[machine_idx[5], i] for i in 1:length(t)],
-        label="ψd''", linewidth=2)
-    plot!(p2, t, [sol[machine_idx[6], i] for i in 1:length(t)],
-        label="ψq''", linewidth=2)
-    savefig(p2, "../results/fluxes.png")
-
-    # Plot avr states
-    p3 = plot(t, Vf_values,
-        label="Field Voltage", title="AVR States", linewidth=2)
-    plot!(p3, t, [sol[avr_idx[2], i] for i in 1:length(t)],
-        label="Terminal Voltage", linewidth=2)
-    plot!(p3, t, [sol[avr_idx[3], i] for i in 1:length(t)],
-        label="Lead-Lag State", linewidth=2)
-    plot!(p3, t, [sol[avr_idx[4], i] for i in 1:length(t)],
-        label="Feedback State", linewidth=2)
-    savefig(p3, "../results/avr_states.png")
-
-    # Plot governor states
-    p4 = plot(t, [sol[gov_idx[1], i] for i in 1:length(t)],
-        label="Fuel Value", title="Governor States", linewidth=2)
-    plot!(p4, t, [sol[gov_idx[2], i] for i in 1:length(t)],
-        label="Fuel Flow", linewidth=2)
-    plot!(p4, t, [sol[gov_idx[3], i] for i in 1:length(t)],
-        label="Exhaust Temp", linewidth=2)
-    savefig(p4, "../results/gov_states.png")
-
-    # Plot line currents
-    p5 = plot(t, [sol[network_idx[I_12_D_IDX], i] for i in 1:length(t)], title="Line Currents", label="I_12_D", linewith=2)
-    plot!(p5, t, [sol[network_idx[I_12_Q_IDX], i] for i in 1:length(t)], label="I_12_Q", linewith=2)
-    plot!(p5, t, [sol[network_idx[I_23_D_IDX], i] for i in 1:length(t)], label="I_23_D", linewith=2)
-    plot!(p5, t, [sol[network_idx[I_23_Q_IDX], i] for i in 1:length(t)], label="I_23_Q", linewith=2)
-    plot!(p5, t, [sol[network_idx[I_13_D_IDX], i] for i in 1:length(t)], label="I_13_D", linewith=2)
-    plot!(p5, t, [sol[network_idx[I_13_Q_IDX], i] for i in 1:length(t)], label="I_13_Q", linewith=2)
-    savefig(p5, "../results/line_currrents.png")
+    make_plots(sol)
 
     return sol
 end
