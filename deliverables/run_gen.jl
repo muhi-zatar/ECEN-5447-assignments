@@ -10,6 +10,7 @@ include("SauerPaiMachineModel.jl")
 
 using .SauerPaiMachineModel
 
+NUM_STATES = 8
 const DELTA = 1
 const OMEGA = 2
 const EQ_P = 3
@@ -64,6 +65,9 @@ function run_machine_only()
         τ_m_init
     )
 
+    # Build mass matrix
+    mass_matrix = Diagonal(machine.M)
+
     function machine_dynamics!(du, u, params, t)
         machine_states = u
 
@@ -85,8 +89,11 @@ function run_machine_only()
         # end
     end
 
+    # Build function with mass matrix
+    explicitDAE_M = ODEFunction(machine_dynamics!, mass_matrix=mass_matrix)
+
     tspan = (0.0, 25.0)
-    prob = ODEProblem(machine_dynamics!, machine_states, tspan, p)
+    prob = ODEProblem(explicitDAE_M, machine_states, tspan, p)
 
     # Define the set of times to apply a perturbation
     perturb_times = [2.5]               # Setting this far ahead for now – we can change this later
@@ -114,7 +121,7 @@ function run_machine_only()
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Tsit5(), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5(autodiff=false), dt=0.00005, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 
