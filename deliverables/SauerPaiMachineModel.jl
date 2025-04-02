@@ -332,18 +332,6 @@ function update_machine_states!(
     i_d = states[I_D]
     i_q = states[I_Q]
 
-    # Debugging:
-    # println("Delta (rotor angle): $δ")
-    # println("Omega (rotor speed): $ω")
-    # println("EQ_P: $eq_p")
-    # println("ED_P: $ed_p")
-    # println("PSI_D_PP: $ψd_pp")
-    # println("PSI_Q_PP: $ψq_pp")
-    # println("I_D: $i_d")
-    # println("I_Q: $i_q")
-
-    # Move from network to machine DQ reference frame
-    # Terminal voltage in dq reference frame
     V_dq = ri_dq_machine(δ) * [real(V_terminal); imag(V_terminal)]
     v_d = V_dq[1]       # Eqn 15.4
     v_q = V_dq[2]       # Eqn 15.4
@@ -352,14 +340,7 @@ function update_machine_states!(
 
     # Calculate electrical torque (Equation 15.6)
     τ_e = ψ_d * i_q - ψ_q * i_d
-
-    # Debugging
-    # println("V_terminal = $V_terminal")
-    # println("V_DQ = $(complex(v_d, v_q))")
-    # println("I_DQ = $(complex(i_d, i_q))")
-    # println("ψ_d = $ψ_d")
-    # println("ψ_q = $ψ_q")
-
+    println("Te = $τ_e")
     # Returned but unused except for printing
     I_mag = abs(complex(i_d, i_q))
 
@@ -371,15 +352,40 @@ function update_machine_states!(
     derivatives[OMEGA] = (τ_m - τ_e - (machine.D * (ω - ω_sys)))
 
     # Subtransient flux derivatives (Equation 15.12)
+    println("id = $i_d")
+    println("iq = $i_q")
     ψd_pp_deriv = (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
     derivatives[PSI_D_PP] = ψd_pp_deriv
     ψq_pp_deriv = (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
     derivatives[PSI_Q_PP] = ψq_pp_deriv
 
     # Transient flux equations (15.12 in Milano's book)
-    derivatives[EQ_P] = (-eq_p - (machine.X_d - machine.Xd_p) * (i_d + machine.γ_d2 * ψd_pp_deriv) + Vf)
-    derivatives[ED_P] = (-ed_p + (machine.X_q - machine.Xq_p) * (i_q + machine.γ_q2 * ψq_pp_deriv))
-
+    println("VF = $Vf")
+    # derivatives[EQ_P] = (-eq_p - (machine.X_d - machine.Xd_p) * (i_d + machine.γ_d2 * (ψd_pp_deriv/ machine.Td0_pp)) + Vf)
+    # derivatives[ED_P] = (-ed_p + (machine.X_q - machine.Xq_p) * (i_q + machine.γ_q2 * (ψq_pp_deriv / machine.Tq0_pp)))
+    derivatives[EQ_P] =
+    (-eq_p - (machine.X_d - machine.Xd_p) * (i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p) + Vf)     #15.13 eq_p
+    derivatives[ED_P] =
+        (-ed_p + (machine.X_q - machine.Xq_p) * (i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_d2 * ed_p))   
+    # derivatives[EQ_P] = (-eq_p - (machine.X_d - machine.Xd_p)*(i_d - machine.γ_d2 * (ψd_pp_deriv / machine.Td0_pp) - (1-machine.γ_d1) * i_d + machine.γ_d2 * eq_p) + Vf)
+    # derivatives[ED_P] = (-ed_p + (machine.X_q - machine.Xq_p)*(i_q - machine.γ_q2 * (ψq_pp_deriv / machine.Tq0_pp) - (1-machine.γ_q1) * i_q - machine.γ_d2 * ed_p))
+    # print derivatives[ED_P]
+    # print derivatives[EQ_P]
+    # println("derivatives[EQ_P] = $(derivatives[EQ_P])")
+    println("derivatives[ED_P] = $(derivatives[ED_P])")
+    println("ed_p = $ed_p")
+    println("eq_p = $eq_p")
+    println("ψq_pp_deriv = $ψq_pp_deriv")
+    println("ψd_pp_deriv = $ψd_pp_deriv")
+    println("Vf = $Vf")
+    println("Xq = $(machine.X_q)")
+    println("Xq_p = $(machine.Xq_p)")
+    println("Xl = $(machine.Xl)")
+    println("Xd = $(machine.X_d)")
+    println("Xd_p = $(machine.Xd_p)")
+    println("γ_q2 = $(machine.γ_q2)")
+    println("γ_d2 = $(machine.γ_d2)")
+    # exit()
     # Synchronous flux equations (15.9 in Milano)
     derivatives[PSI_D] = (machine.R * i_d + ω * ψ_q + v_d)
     derivatives[PSI_Q] = (machine.R * i_q - ω * ψ_d + v_q)
