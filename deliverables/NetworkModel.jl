@@ -261,19 +261,20 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     sanity_check(res_i, zeros(6), "Line current")
 
     # Populate mass matrix
+    ω_0 = 2.0 * π * 60.0
     M_diagonal = zeros(Float64, NUM_STATES)
-    M_diagonal[I_12_D_IDX] = network.X_12
-    M_diagonal[I_12_Q_IDX] = network.X_12
-    M_diagonal[I_13_D_IDX] = network.X_13
-    M_diagonal[I_13_Q_IDX] = network.X_13
-    M_diagonal[I_23_D_IDX] = network.X_23
-    M_diagonal[I_23_Q_IDX] = network.X_23
-    M_diagonal[V_1_D_IDX] = network.B_1
-    M_diagonal[V_1_Q_IDX] = network.B_1
-    M_diagonal[V_2_D_IDX] = network.B_2
-    M_diagonal[V_2_Q_IDX] = network.B_2
-    M_diagonal[V_3_D_IDX] = network.B_3
-    M_diagonal[V_3_Q_IDX] = network.B_3
+    M_diagonal[I_12_D_IDX] = network.X_12 / ω_0
+    M_diagonal[I_12_Q_IDX] = network.X_12 / ω_0
+    M_diagonal[I_13_D_IDX] = network.X_13 / ω_0
+    M_diagonal[I_13_Q_IDX] = network.X_13 / ω_0
+    M_diagonal[I_23_D_IDX] = network.X_23 / ω_0
+    M_diagonal[I_23_Q_IDX] = network.X_23 / ω_0
+    M_diagonal[V_1_D_IDX] = network.B_1 / ω_0
+    M_diagonal[V_1_Q_IDX] = network.B_1 / ω_0
+    M_diagonal[V_2_D_IDX] = network.B_2 / ω_0
+    M_diagonal[V_2_Q_IDX] = network.B_2 / ω_0
+    M_diagonal[V_3_D_IDX] = network.B_3 / ω_0
+    M_diagonal[V_3_Q_IDX] = network.B_3 / ω_0
     M_diagonal[I_1_D_IDX] = 0.0
     M_diagonal[I_1_Q_IDX] = 0.0
     M_diagonal[I_3_D_IDX] = 0.0

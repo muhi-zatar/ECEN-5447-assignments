@@ -179,14 +179,16 @@ function run_network(network_file)
     function affect!(integrator)
         #### Uncomment the desired perturbation ####
         # Load Jump
-        integrator.p.network.Z_L *= 0.85
+        #integrator.p.network.Z_L *= 0.85
 
         # Load Decrease
         #integrator.p.network.Z_L *= 1.15
 
         # Line Trip
-        #integrator.p.network.R_12 = 1e6
-        #integrator.p.network.X_12 = 1e6
+        integrator.p.network.R_12 = 1e6
+        integrator.p.network.X_12 = 1e6
+        integrator.p.network.B_1 *= 0.5
+        integrator.p.network.B_2 *= 0.5
     end
 
     # Create a Callback function that represents the perturbation
