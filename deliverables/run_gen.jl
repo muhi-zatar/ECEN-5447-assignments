@@ -5,6 +5,7 @@ Pkg.activate("../.")
 using DifferentialEquations
 using Plots
 using LinearAlgebra
+using Sundials
 
 include("SauerPaiMachineModel.jl")
 
@@ -75,41 +76,64 @@ function run_machine_only()
     mass_matrix = Diagonal(machine.M)
     println("Mass matrix: $(machine.M)")
 
-    function machine_dynamics!(du, u, params, t)
-        machine_states = u
+    # function machine_dynamics!(du, u, params, t)
+    #     machine_states = u
 
-        du_machine = zeros(Float64, NUM_STATES)
+    #     du_machine = zeros(Float64, NUM_STATES)
 
-        _, _, ω_machine, V_mag, I_mag = update_machine_states!(
-            machine_states,
-            du_machine,
-            params.V_terminal,
-            params.Vf,
-            params.τm,
-            params.machine
-        )
+    #     _, _, ω_machine, V_mag, I_mag = update_machine_states!(
+    #         machine_states,
+    #         du_machine,
+    #         params.V_terminal,
+    #         params.Vf,
+    #         params.τm,
+    #         params.machine
+    #     )
 
-        du = du_machine
+    #     du = du_machine
 
-        # if abs(t - round(t)) < 0.001
-        #     println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
-        # end
+    #     # if abs(t - round(t)) < 0.001
+    #     #     println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
+    #     # end
 
-        # if t > 0.001
-        #     exit()
-        # end
+    #     # if t > 0.001
+    #     #     exit()
+    #     # end
+    # end
+
+    function implicitDAE(out, du, u, params, t)
+        out = update_machine_states!(u, du, params.V_terminal, params.Vf, params.τm, params.machine)
+        is_set = false
+        if (t > 5.0 && t < 6.0)
+            u[1] *= 0.7
+            is_set = true
+        end
     end
 
-    # Build function
-    explicitDAE_M = ODEFunction(machine_dynamics!, mass_matrix=mass_matrix)
+    # Define which variables have differential terms
+    diff_vars = [true, true, true, true, true, true, true, true, false, false]
 
-    # Test initial conditions
-    u0 = deepcopy(machine_states)
-    du0 = zeros(Float64, length(machine_states))
-    explicitDAE_M(du0, u0, p, 0)
+    # Solve system for one time step using an initializer to find consistent ICs
+    # u0_guess = machine_states
+    # du0_guess = zeros(Float64, 10)
+    # tspan_init = (0.0, 0.0)
+    # prob_init = DAEProblem(
+    #     implicitDAE, du0_guess, u0_guess, tspan_init, p;
+    #     differential_vars=diff_vars,
+    #     initializealg=BrownFullBasicInit()
+    # )
+    # sol_init = solve(prob_init, DFBDF())
+    # sol_init.u[1]
+
+    # Define initial conditions
+    u0 = machine_states
+    du0 = zeros(Float64, 10)
+
+    # Build function
+    #explicitDAE_M = ODEFunction(machine_dynamics!, mass_matrix=mass_matrix)
 
     tspan = (0.0, 25.0)
-    prob = ODEProblem(explicitDAE_M, machine_states, tspan, p)
+    prob = DAEProblem(implicitDAE, du0, u0, tspan, p; differential_vars=diff_vars)
 
     # Define the set of times to apply a perturbation
     perturb_times = [35.0]               # Setting this far ahead for now – we can change this later
@@ -123,7 +147,8 @@ function run_machine_only()
     function affect!(integrator)
         #### Uncomment the desired perturbation ####
         # Load Jump
-        integrator.p.τm *= 1.10
+        #integrator.p.τm *= 1.10
+        integrator.u[DELTA] *= 0.7
 
         # Load Decrease
         #integrator.p.network.Z_L *= 1.15
@@ -137,7 +162,8 @@ function run_machine_only()
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Rosenbrock23(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    #sol = solve(prob, Rosenbrock23(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, IDA(), callback=cb, tstops=perturb_times)
 
     t = sol.t
 
@@ -156,7 +182,7 @@ function run_machine_only()
         label="ψq''", linewidth=2)
 
     p_combined = plot(p1, p2, layout=(2, 1), size=(800, 1200))
-    savefig(p_combined, "machine_only_results_DAE.png")
+    savefig(p_combined, "machine_only_results_IDA.png")
 
     return sol
 end

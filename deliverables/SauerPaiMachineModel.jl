@@ -315,11 +315,15 @@ end
 function update_machine_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
+    #out::AbstractVector{Float64},
     V_terminal::Complex{Float64},
     Vf::Float64,
     τ_m::Float64,
     machine::SauerPaiMachine
 )
+    # Prepare a vector for the outputs
+    out = zeros(Float64, 10)
+
     # Extract machine states
     δ = states[DELTA]
     ω = states[OMEGA]
@@ -340,59 +344,69 @@ function update_machine_states!(
 
     # Calculate electrical torque (Equation 15.6)
     τ_e = ψ_d * i_q - ψ_q * i_d
-    println("Te = $τ_e")
+    #println("Te = $τ_e")
     # Returned but unused except for printing
     I_mag = abs(complex(i_d, i_q))
 
     # State derivatives
     # Shaft equations (15.5 in Milano's book)
     ω_sys = 1.0
-    derivatives[DELTA] = (ω - ω_sys)
+    #derivatives[DELTA] = (ω - ω_sys)
+    out[DELTA] = -derivatives[DELTA] + (ω - ω_sys) * (2.0 * π * 60.0)
     # Speed derivative
-    derivatives[OMEGA] = (τ_m - τ_e - (machine.D * (ω - ω_sys)))
+    #derivatives[OMEGA] = (τ_m - τ_e - (machine.D * (ω - ω_sys)))
+    out[OMEGA] = -derivatives[OMEGA] + (τ_m - τ_e - (machine.D * (ω - ω_sys))) / (2.0 * machine.H)
 
     # Subtransient flux derivatives (Equation 15.12)
-    println("id = $i_d")
-    println("iq = $i_q")
-    ψd_pp_deriv = (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
-    derivatives[PSI_D_PP] = ψd_pp_deriv
-    ψq_pp_deriv = (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
-    derivatives[PSI_Q_PP] = ψq_pp_deriv
+    # println("id = $i_d")
+    # println("iq = $i_q")
+    #ψd_pp_deriv = (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d)
+    #derivatives[PSI_D_PP] = ψd_pp_deriv
+    out[PSI_D_PP] = -derivatives[PSI_D_PP] + (eq_p - ψd_pp - (machine.Xd_p - machine.Xl) * i_d) / machine.Td0_pp
+    #ψq_pp_deriv = (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q)
+    #derivatives[PSI_Q_PP] = ψq_pp_deriv
+    out[PSI_Q_PP] = -derivatives[PSI_Q_PP] + (-ed_p - ψq_pp - (machine.Xq_p - machine.Xl) * i_q) / machine.Tq0_pp
 
     # Transient flux equations (15.12 in Milano's book)
-    println("VF = $Vf")
+    #println("VF = $Vf")
     # derivatives[EQ_P] = (-eq_p - (machine.X_d - machine.Xd_p) * (i_d + machine.γ_d2 * (ψd_pp_deriv/ machine.Td0_pp)) + Vf)
     # derivatives[ED_P] = (-ed_p + (machine.X_q - machine.Xq_p) * (i_q + machine.γ_q2 * (ψq_pp_deriv / machine.Tq0_pp)))
-    derivatives[EQ_P] =
-    (-eq_p - (machine.X_d - machine.Xd_p) * (i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p) + Vf)     #15.13 eq_p
-    derivatives[ED_P] =
-        (-ed_p + (machine.X_q - machine.Xq_p) * (i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_d2 * ed_p))   
+    # derivatives[EQ_P] =
+    #     (-eq_p - (machine.X_d - machine.Xd_p) * (i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p) + Vf)     #15.13 eq_p
+    out[EQ_P] = -derivatives[EQ_P] + (-eq_p - (machine.X_d - machine.Xd_p) * (i_d - machine.γ_d2 * ψd_pp - (1 - machine.γ_d1) * i_d + machine.γ_d2 * eq_p) + Vf) / machine.Td0_p     #15.13 eq_p
+    # derivatives[ED_P] =
+    #     (-ed_p + (machine.X_q - machine.Xq_p) * (i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_d2 * ed_p))
+    out[ED_P] = -derivatives[ED_P] + (-ed_p + (machine.X_q - machine.Xq_p) * (i_q - machine.γ_q2 * ψq_pp - (1 - machine.γ_q1) * i_q - machine.γ_d2 * ed_p)) / machine.Tq0_p
     # derivatives[EQ_P] = (-eq_p - (machine.X_d - machine.Xd_p)*(i_d - machine.γ_d2 * (ψd_pp_deriv / machine.Td0_pp) - (1-machine.γ_d1) * i_d + machine.γ_d2 * eq_p) + Vf)
     # derivatives[ED_P] = (-ed_p + (machine.X_q - machine.Xq_p)*(i_q - machine.γ_q2 * (ψq_pp_deriv / machine.Tq0_pp) - (1-machine.γ_q1) * i_q - machine.γ_d2 * ed_p))
     # print derivatives[ED_P]
     # print derivatives[EQ_P]
     # println("derivatives[EQ_P] = $(derivatives[EQ_P])")
-    println("derivatives[ED_P] = $(derivatives[ED_P])")
-    println("ed_p = $ed_p")
-    println("eq_p = $eq_p")
-    println("ψq_pp_deriv = $ψq_pp_deriv")
-    println("ψd_pp_deriv = $ψd_pp_deriv")
-    println("Vf = $Vf")
-    println("Xq = $(machine.X_q)")
-    println("Xq_p = $(machine.Xq_p)")
-    println("Xl = $(machine.Xl)")
-    println("Xd = $(machine.X_d)")
-    println("Xd_p = $(machine.Xd_p)")
-    println("γ_q2 = $(machine.γ_q2)")
-    println("γ_d2 = $(machine.γ_d2)")
+    # println("derivatives[ED_P] = $(derivatives[ED_P])")
+    # println("ed_p = $ed_p")
+    # println("eq_p = $eq_p")
+    #println("ψq_pp_deriv = $ψq_pp_deriv")
+    #println("ψd_pp_deriv = $ψd_pp_deriv")
+    # println("Vf = $Vf")
+    # println("Xq = $(machine.X_q)")
+    # println("Xq_p = $(machine.Xq_p)")
+    # println("Xl = $(machine.Xl)")
+    # println("Xd = $(machine.X_d)")
+    # println("Xd_p = $(machine.Xd_p)")
+    # println("γ_q2 = $(machine.γ_q2)")
+    # println("γ_d2 = $(machine.γ_d2)")
     # exit()
     # Synchronous flux equations (15.9 in Milano)
-    derivatives[PSI_D] = (machine.R * i_d + ω * ψ_q + v_d)
-    derivatives[PSI_Q] = (machine.R * i_q - ω * ψ_d + v_q)
+    #derivatives[PSI_D] = (machine.R * i_d + ω * ψ_q + v_d)
+    out[PSI_D] = -derivatives[PSI_D] + ((machine.R * i_d + ω * ψ_q + v_d)) * (2.0 * π * 60.0)
+    #derivatives[PSI_Q] = (machine.R * i_q - ω * ψ_d + v_q)
+    out[PSI_Q] = -derivatives[PSI_Q] + ((machine.R * i_q - ω * ψ_d + v_q)) * (2.0 * π * 60.0)
 
     # Current derivatives – Algebraic (Eq 15.15)
-    derivatives[I_Q] = ψ_d + machine.Xd_pp * i_d - machine.γ_d1 * eq_p - (1 - machine.γ_d1) * ψd_pp
-    derivatives[I_D] = ψ_q + machine.Xq_pp * i_q + machine.γ_q1 * ed_p - (1 - machine.γ_q1) * ψq_pp
+    #derivatives[I_Q] = ψ_d + machine.Xd_pp * i_d - machine.γ_d1 * eq_p - (1 - machine.γ_d1) * ψd_pp
+    out[I_Q] = ψ_d + machine.Xd_pp * i_d - machine.γ_d1 * eq_p - (1 - machine.γ_d1) * ψd_pp
+    #derivatives[I_D] = ψ_q + machine.Xq_pp * i_q + machine.γ_q1 * ed_p - (1 - machine.γ_q1) * ψq_pp
+    out[I_D] = ψ_q + machine.Xq_pp * i_q + machine.γ_q1 * ed_p - (1 - machine.γ_q1) * ψq_pp
 
     # Calculate power at the bus to return
     p_bus = v_d * i_d + v_q * i_q       # Milano Eq. 15.2
@@ -404,6 +418,7 @@ function update_machine_states!(
     # Calculate current in positive sequence
     I_RI = conj(S_bus / V_terminal)
 
-    return I_RI, S_bus, ω, V_mag, I_mag
+    #return I_RI, S_bus, ω, V_mag, I_mag
+    return out
 end
 end # module 
