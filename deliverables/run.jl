@@ -65,6 +65,10 @@ const EFD_IDX = 1   # Field voltage (output of amplifier)
 const VS_IDX = 2    # Sensed terminal voltage
 const VLL_IDX = 3   # Lead-lag output
 const VF_IDX = 4    # Feedback signal
+# Governor state indices
+const FV_IDX = 1                # Fuel value
+const FF_IDX = 2                # Fuel flow
+const ET_IDX = 3                # Exhaust temp
 
 # Matrix transformation functions
 # These are used to convert between rectangular and polar coordinates
@@ -187,42 +191,6 @@ function run_simulation(network_file)
     mass_matrix = Diagonal(M_system)
     println("Mass matrix = $(M_system)")
 
-    # Define auxiliary variables for intermediate values.
-    # We will use vectors rather than global variables to avoid performance issues (https://docs.julialang.org/en/v1/manual/performance-tips/#Avoid-global-variables)
-    # These are needed because we can't modify p during integration
-    # Start by allocating empty typed vectors
-    # Used by ODE System:
-    V_terminal_magnitude_aux = Float64[]          # Machine bus voltage magnitude (from Power Flow)
-    ω_aux = Float64[]                             # Rotor angular velocity (assumed to be 1.0 p.u.)
-    V_terminal_aux = Complex{Float64}[]           # Machine bus quasi-static voltage phasor (from Power Flow)
-    Vf_aux = Float64[]                            # Field voltage (from machine initialization)
-    τm_aux = Float64[]                            # Mechanical torque (Assume τm = τe = P)
-    S_terminal_machine_aux = Complex{Float64}[]   # Machine bus apparent power (from Power Flow)
-
-    # For debugging:
-    S_terminal_network_aux = Complex{Float64}[]
-    V_mag_machine_aux = Float64[]
-    I_mag_machine_aux = Float64[]
-    t_aux = Float64[]
-
-    # Now populate the first entry with the appropriate values from initialization
-    push!(V_terminal_magnitude_aux, V_mag)
-    push!(ω_aux, ω_init)
-    push!(V_terminal_aux, V_terminal_init)
-    push!(Vf_aux, Vf_init)
-    push!(τm_aux, τ_m_init)
-    push!(S_terminal_machine_aux, Complex(P, Q))
-
-    # For debugging:
-    push!(S_terminal_network_aux, Complex(0.0, 0.0))
-    push!(V_mag_machine_aux, 0.0)
-    push!(I_mag_machine_aux, 0.0)
-    push!(t_aux, 0.0)
-    println("Initial auxiliary variables:\nomega=$(ω_aux[end]), τm=$(τm_aux[end]), Vf=$(Vf_aux[end]), 
-        V_mag=$(V_terminal_magnitude_aux[end]), V_mag_machine=$(V_mag_machine_aux[end]), 
-        I_mag_machine=$(I_mag_machine_aux[end]), S_terminal_machine=$(S_terminal_machine_aux[end]), 
-        S_terminal_network=$(S_terminal_network_aux[end])")
-
     # ODE function
     function ode_system!(du, u, p, t)
         # Extract states for each component
@@ -267,34 +235,9 @@ function run_simulation(network_file)
 
         τ_m = update_gov_states!(gov_states_f64, du_gov, ω, governor)
 
-        I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(machine_states_f64, du_machine, V_terminal, efd, τ_m, machine)
+        _, S_terminal_machine, _, _, _ = update_machine_states!(machine_states_f64, du_machine, V_terminal, efd, τ_m, machine)
 
-        V_terminal_network_pos, S_terminal_network, I_terminal_network_pos = update_network_states!(network_states_f64, du_network, S_terminal_machine, network)
-
-        # Update global/auxiliary variables for plotting
-        push!(V_terminal_magnitude_aux, V_terminal_mag)
-
-        # Rotor angular velocity: Used by governor, returned by machine
-        push!(ω_aux, ω)
-
-        # Machine bus quasi-static voltage phasor: Used by machine, returned by network
-        push!(V_terminal_aux, V_terminal)
-
-        # Field voltage: Used by machine, returned by AVR
-        push!(Vf_aux, efd)
-
-        # Mechanical torque: Used by machine, returned by governor
-        push!(τm_aux, τ_m)
-
-        # Machine apparent power: Used by network, returned by machine
-        push!(S_terminal_machine_aux, S_terminal_machine)
-
-        # Debugging:
-        push!(S_terminal_network_aux, S_terminal_network)
-        push!(V_mag_machine_aux, V_mag)
-        push!(I_mag_machine_aux, I_mag)
-        push!(t_aux, t)
-
+        _, _, _ = update_network_states!(network_states_f64, du_network, S_terminal_machine, network)
 
         # Copy derivatives to output
         du[p.network_idx] .= du_network
@@ -305,24 +248,22 @@ function run_simulation(network_file)
         # For debugging printing some results,
         if abs(t - round(t)) < 0.000001
             println("t=$t")
-            #println("t=$t: omega=$(ω_aux[end]), τm=$(τm_aux[end]), Vf=$(Vf_aux[end]), V_mag=$(V_terminal_magnitude_aux[end]), V_mag_machine=$(V_mag_machine_aux[end]), I_mag_machine=$(I_mag_machine_aux[end]), S_terminal_machine=$(S_terminal_machine_aux[end]), S_terminal_network=$(S_terminal_network_aux[end])")
-            println("Machine States: δ=$(machine_states_f64[1]), ω=$(machine_states_f64[2]), EQ_P=$(machine_states_f64[3]), ED_P=$(machine_states_f64[4]), PSI_D_PP=$(machine_states_f64[5]), PSI_Q_PP=$(machine_states_f64[6])")
-            println("AVR States: VF=$(avr_states_f64[1]), VT=$(avr_states_f64[2]), VLL=$(avr_states_f64[3]), VFB=$(avr_states_f64[4])")
-            println("Gov States: FV=$(gov_states_f64[1]), FF=$(gov_states_f64[2]), ET=$(gov_states_f64[3])")
-            #println("Network States: I_12_D=$(network_states_f64[1]), I_12_Q=$(network_states_f64[2]), I_13_D=$(network_states_f64[3]), I_13_Q=$(network_states_f64[4]), V_2_D=$(network_states_f64[9]), V_2_Q=$(network_states_f64[10]), I_B2_D=$(network_states_f64[19]), I_B2_Q=$(network_states_f64[20])")
+            println("Machine States: δ=$(machine_states_f64[DELTA]), ω=$(machine_states_f64[OMEGA]), EQ_P=$(machine_states_f64[EQ_P]), ED_P=$(machine_states_f64[ED_P]), PSI_D_PP=$(machine_states_f64[PSI_D_PP]), PSI_Q_PP=$(machine_states_f64[PSI_Q_PP])")
+            println("AVR States: VF=$(avr_states_f64[EFD_IDX]), VT=$(avr_states_f64[VS_IDX]), VLL=$(avr_states_f64[VLL_IDX]), VFB=$(avr_states_f64[VF_IDX])")
+            println("Gov States: FV=$(gov_states_f64[FV_IDX]), FF=$(gov_states_f64[FF_IDX]), ET=$(gov_states_f64[ET_IDX])")
+            println("Network States: I_12_D=$(network_states_f64[I_12_D_IDX]), I_12_Q=$(network_states_f64[I_12_Q_IDX]), I_13_D=$(network_states_f64[I_13_D_IDX]), I_13_Q=$(network_states_f64[I_13_Q_IDX]), V_2_D=$(network_states_f64[V_2_D_IDX]), V_2_Q=$(network_states_f64[V_2_Q_IDX]), I_B2_D=$(network_states_f64[I_B2_D_IDX]), I_B2_Q=$(network_states_f64[I_B2_Q_IDX])")
         end
     end
 
     # Build the function
     explicitDAE_M = ODEFunction(ode_system!, mass_matrix=mass_matrix)
 
-
     # Step 4: Set up and solve the ODE system
     tspan = (0.0, 20.0)
     prob = ODEProblem(explicitDAE_M, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [5.0]               # Setting this far ahead for now – we can change this later
+    perturb_times = [5.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -336,7 +277,7 @@ function run_simulation(network_file)
         #integrator.p.network.Z_L *= 1.15
 
         # Load Decrease
-        #integrator.p.network.Z_L *= 1.15
+        #integrator.p.network.Z_L *= 0.85
 
         # Line Trip
         integrator.p.network.R_12 = 1e6
@@ -363,7 +304,7 @@ function run_simulation(network_file)
         label="Rotor angle (δ)", title="Machine States", linewidth=2)
     plot!(p1, t, omega_values,
         label="Rotor speed (ω)", linewidth=2)
-    savefig(p1, "shaft_states.png")
+    savefig(p1, "../results/shaft_states.png")
 
     # Plot fluxes
     p2 = plot(t, [sol[machine_idx[3], i] for i in 1:length(t)],
@@ -374,7 +315,7 @@ function run_simulation(network_file)
         label="ψd''", linewidth=2)
     plot!(p2, t, [sol[machine_idx[6], i] for i in 1:length(t)],
         label="ψq''", linewidth=2)
-    savefig(p2, "fluxes.png")
+    savefig(p2, "../results/fluxes.png")
 
     # Plot avr states
     p3 = plot(t, Vf_values,
@@ -385,7 +326,7 @@ function run_simulation(network_file)
         label="Lead-Lag State", linewidth=2)
     plot!(p3, t, [sol[avr_idx[4], i] for i in 1:length(t)],
         label="Feedback State", linewidth=2)
-    savefig(p3, "avr_states.png")
+    savefig(p3, "../results/avr_states.png")
 
     # Plot governor states
     p4 = plot(t, [sol[gov_idx[1], i] for i in 1:length(t)],
@@ -394,34 +335,16 @@ function run_simulation(network_file)
         label="Fuel Flow", linewidth=2)
     plot!(p4, t, [sol[gov_idx[3], i] for i in 1:length(t)],
         label="Exhaust Temp", linewidth=2)
-    savefig(p4, "gov_states.png")
-
-    # Plot torques
-    p5 = plot(t_aux, τm_aux,
-        label="Mechanical Torque", title="Machine Torques", linewidth=2)
-    savefig(p5, "torque.png")
-
-    # Plot voltages
-    p6 = plot(t_aux, V_terminal_magnitude_aux, label="Terminal Voltage Magnitude", title="Voltages", linewidth=2)
-    plot!(p6, t_aux, Vf_aux, label="Field Voltage", linewidth=2)
-    savefig(p6, "voltages.png")
-
-    # Plot powers
-    p7 = plot(t_aux, real(S_terminal_machine_aux), label="P", title="Power Injections at Machine Bus", linewidth=2)
-    plot!(p7, t_aux, imag(S_terminal_machine_aux), label="Q", linewidth=2)
-    savefig(p7, "power.png")
+    savefig(p4, "../results/gov_states.png")
 
     # Plot line currents
-    p8 = plot(t, [sol[network_idx[I_12_D_IDX], i] for i in 1:length(t)], title="Line Currents", label="I_12_D", linewith=2)
-    plot!(p8, t, [sol[network_idx[I_12_Q_IDX], i] for i in 1:length(t)], label="I_12_Q", linewith=2)
-    plot!(p8, t, [sol[network_idx[I_23_D_IDX], i] for i in 1:length(t)], label="I_23_D", linewith=2)
-    plot!(p8, t, [sol[network_idx[I_23_Q_IDX], i] for i in 1:length(t)], label="I_23_Q", linewith=2)
-    plot!(p8, t, [sol[network_idx[I_13_D_IDX], i] for i in 1:length(t)], label="I_13_D", linewith=2)
-    plot!(p8, t, [sol[network_idx[I_13_Q_IDX], i] for i in 1:length(t)], label="I_13_Q", linewith=2)
-    savefig(p8, "line_currrents.png")
-
-    # p_combined = plot(p1, p2, p3, p4, p5, p6, p7, layout=(7, 1), size=(1000, 2400))
-    # savefig(p_combined, "machine_avr_governor_results.png")
+    p5 = plot(t, [sol[network_idx[I_12_D_IDX], i] for i in 1:length(t)], title="Line Currents", label="I_12_D", linewith=2)
+    plot!(p5, t, [sol[network_idx[I_12_Q_IDX], i] for i in 1:length(t)], label="I_12_Q", linewith=2)
+    plot!(p5, t, [sol[network_idx[I_23_D_IDX], i] for i in 1:length(t)], label="I_23_D", linewith=2)
+    plot!(p5, t, [sol[network_idx[I_23_Q_IDX], i] for i in 1:length(t)], label="I_23_Q", linewith=2)
+    plot!(p5, t, [sol[network_idx[I_13_D_IDX], i] for i in 1:length(t)], label="I_13_D", linewith=2)
+    plot!(p5, t, [sol[network_idx[I_13_Q_IDX], i] for i in 1:length(t)], label="I_13_Q", linewith=2)
+    savefig(p5, "../results/line_currrents.png")
 
     return sol
 end
