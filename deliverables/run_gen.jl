@@ -16,6 +16,8 @@ const EQ_P = 3
 const ED_P = 4
 const PSI_D_PP = 5
 const PSI_Q_PP = 6
+const PSI_D = 7
+const PSI_Q = 8
 
 mutable struct MachineParams
     machine::SauerPaiMachine
@@ -44,6 +46,7 @@ function run_machine_only()
     machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal, V_angle, P, Q)
 
     println("\nInitial Machine States:")
+    println("Vf (field voltage): $Vf_init")
     println("Delta (rotor angle): $(machine_states[DELTA])")
     println("Omega (rotor speed): $(machine_states[OMEGA])")
     println("EQ_P: $(machine_states[EQ_P])")
@@ -64,7 +67,7 @@ function run_machine_only()
     function machine_dynamics!(du, u, params, t)
         machine_states = u
 
-        du_machine = zeros(Float64, 6)
+        du_machine = zeros(Float64, 8)
 
         I_terminal_machine_pos, S_terminal_machine, ω_machine, V_mag, I_mag = update_machine_states!(
             machine_states,
@@ -77,9 +80,9 @@ function run_machine_only()
 
         du .= du_machine
 
-        if abs(t - round(t)) < 0.001
-            println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
-        end
+        # if abs(t - round(t)) < 0.00001
+        #     println("t=$t: δ=$(machine_states[DELTA]), ω=$ω_machine, τm=$(params.τm), Vf=$(params.Vf), V_mag=$V_mag, I_mag=$I_mag")
+        # end
     end
 
     tspan = (0.0, 25.0)
