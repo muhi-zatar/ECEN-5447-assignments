@@ -1,0 +1,21 @@
+# Load increase perturbation scenario
+
+# Simulation parameters
+[simulation]
+start_time = 0.0
+end_time = 20.0
+time_step = 0.001
+perturb_time = 5.0
+save_interval = 0.01
+
+# Component enablement
+[enabled_components]
+machine = true
+avr = true
+governor = true
+
+# Perturbation settings
+[perturbation]
+type = "LOAD_INCREASE"
+bus = "3"         # Increase load at bus 3
+percentage = 0.15 # 15% load increase
