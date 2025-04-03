@@ -1,0 +1,80 @@
+# Default configuration for three-bus power system
+
+# Simulation parameters
+[simulation]
+start_time = 0.0
+end_time = 20.0
+time_step = 0.001
+perturb_time = 5.0
+save_interval = 0.01
+
+# Component enablement
+[enabled_components]
+machine = true
+avr = true
+governor = true
+
+# Network parameters
+[network]
+R_12 = 0.01
+X_12 = 0.12
+B_1 = 0.05
+R_13 = 0.01
+X_13 = 0.12
+B_3 = 0.05
+R_23 = 0.01
+X_23 = 0.12
+B_2 = 0.05
+X_IB = 0.1
+
+# Machine parameters
+[machine]
+R = 0.002
+X_d = 1.79
+X_q = 1.71
+Xd_p = 0.169
+Xq_p = 0.228
+Xd_pp = 0.135
+Xq_pp = 0.2
+Xl = 0.13
+Td0_p = 4.3
+Tq0_p = 0.85
+Td0_pp = 0.032
+Tq0_pp = 0.05
+H = 3.148
+D = 2.0
+base_power = 100.0
+system_base_power = 100.0
+system_base_frequency = 60.0
+
+# AVR parameters
+[avr]
+TR = 0.01
+TB = 20.0
+TC = 10.0
+KF = 0.0
+TF = 0.1
+KA = 200.0
+TA = 0.1
+KC = 0.0
+V_ref = 1.0  # This will be overridden by initialization
+
+# Governor parameters
+[governor]
+R = 0.05
+T1 = 0.2
+T2 = 0.2
+T3 = 2.0
+D_turb = 0.0
+AT = 1.0
+KT = 2.5
+V_min = 0.01
+V_max = 1.1
+P_ref = 1.0  # This will be overridden by initialization
+
+# Perturbation settings
+[perturbation]
+type = "LINE_TRIP"  # Options: LINE_TRIP, LOAD_INCREASE, LOAD_DECREASE
+line = "1-2"        # Used for LINE_TRIP: "1-2", "1-3", or "2-3"
+bus = "3"           # Used for LOAD_INCREASE/LOAD_DECREASE
+percentage = 0.15   # Change percentage for load perturbations
