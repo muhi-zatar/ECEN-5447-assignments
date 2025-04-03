@@ -114,8 +114,8 @@ function plot_rotor(sol, indices::StateIndices, output_dir::String)
     t = sol.t
     
     # Extract rotor states
-    delta_values = [sol[indices.machine[:DELTA], i] for i in 1:length(t)]
-    omega_values = [sol[indices.machine[:OMEGA], i] for i in 1:length(t)]
+    delta_values = [sol[indices.machine[:DELTA], i] * 180/π for i in 1:length(t)]
+    omega_values = [sol[indices.machine[:OMEGA], i] * 60.0 for i in 1:length(t)]
     
     # Create angle plot
     p1 = plot(t, delta_values,
@@ -123,7 +123,7 @@ function plot_rotor(sol, indices::StateIndices, output_dir::String)
         title="Rotor Angle", 
         linewidth=2, 
         xlabel="Time (s)",
-        ylabel="Angle (rad)",
+        ylabel="Angle (Degrees)",
         left_margin=10mm)
     
     # Create speed plot
@@ -132,7 +132,7 @@ function plot_rotor(sol, indices::StateIndices, output_dir::String)
         title="Rotor Speed", 
         linewidth=2, 
         xlabel="Time (s)",
-        ylabel="Speed (pu)",
+        ylabel="Speed (Hz)",
         left_margin=10mm)
     
     # Save plots
