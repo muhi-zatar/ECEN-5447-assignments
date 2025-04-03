@@ -29,9 +29,9 @@ function apply_perturbation!(model::PowerSystemModel;
     if perturbation_type == LINE_TRIP
         apply_line_trip!(model, parameter_changes)
     elseif perturbation_type == LOAD_INCREASE
-        apply_load_change!(model, parameter_changes, increase=true)
+        apply_load_change!(model, parameter_changes, true)
     elseif perturbation_type == LOAD_DECREASE
-        apply_load_change!(model, parameter_changes, increase=false)
+        apply_load_change!(model, parameter_changes, false)
     else
         @warn "Unknown perturbation type: $perturbation_type"
     end

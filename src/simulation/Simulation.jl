@@ -11,7 +11,7 @@ using ..AVRComponents
 using ..GovernorComponents
 using ..NetworkComponents
 using ..Initialization
-using ..Perturbation: apply_perturbation!, PerturbationType, LINE_TRIP
+using ..Perturbation: apply_perturbation!, PerturbationType, LINE_TRIP, LOAD_INCREASE, LOAD_DECREASE
 using ..Logging
 using ..Plotting
 using ..Transformations: ri_dq, dq_ri
@@ -157,7 +157,7 @@ function run_simulation(model::PowerSystemModel, logger=nothing)
         # Apply perturbation to the model
         apply_perturbation!(
             integrator.p.model,
-            perturbation_type=LINE_TRIP,
+            perturbation_type=LOAD_DECREASE,
             parameter_changes=Dict{Symbol, Any}()
         )
                 
