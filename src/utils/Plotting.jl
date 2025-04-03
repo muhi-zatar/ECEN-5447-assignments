@@ -22,7 +22,7 @@ function plot_results(sol, indices::StateIndices, output_dir::String="results")
     if !isdir(output_dir)
         mkpath(output_dir)
     end
-    
+
     # Generate and save all plots
     plot_voltages(sol, indices, output_dir)
     plot_rotor(sol, indices, output_dir)
@@ -31,7 +31,7 @@ function plot_results(sol, indices::StateIndices, output_dir::String="results")
     plot_power(sol, indices, output_dir)
     plot_avr_states(sol, indices, output_dir)
     plot_governor_states(sol, indices, output_dir)
-    
+
     return "Plots saved to $output_dir"
 end
 
@@ -74,7 +74,7 @@ Generate bus voltage magnitude plots.
 """
 function plot_voltages(sol, indices::StateIndices, output_dir::String)
     t = sol.t
-    
+
     # Extract voltage components
     v_1_d_values = [sol[indices.network[:V_1_D_IDX], i] for i in 1:length(t)]
     v_1_q_values = [sol[indices.network[:V_1_Q_IDX], i] for i in 1:length(t)]
@@ -82,26 +82,26 @@ function plot_voltages(sol, indices::StateIndices, output_dir::String)
     v_2_q_values = [sol[indices.network[:V_2_Q_IDX], i] for i in 1:length(t)]
     v_3_d_values = [sol[indices.network[:V_3_D_IDX], i] for i in 1:length(t)]
     v_3_q_values = [sol[indices.network[:V_3_Q_IDX], i] for i in 1:length(t)]
-    
+
     # Transform to RI and calculate magnitudes
     _, v_1_magnitude = ri_dq_vector(v_1_d_values, v_1_q_values)
     _, v_2_magnitude = ri_dq_vector(v_2_d_values, v_2_q_values)
     _, v_3_magnitude = ri_dq_vector(v_3_d_values, v_3_q_values)
-    
+
     # Create plot
-    p = plot(t, v_1_magnitude, 
-        label="Infinite Bus", 
-        linewidth=2, 
-        title="Bus Voltage Magnitudes", 
+    p = plot(t, v_1_magnitude,
+        label="Infinite Bus",
+        linewidth=2,
+        title="Bus Voltage Magnitudes",
         xlabel="Time (s)",
         ylabel="Voltage (pu)",
         left_margin=10mm)
     plot!(p, t, v_2_magnitude, label="Machine Bus", linewidth=2)
     plot!(p, t, v_3_magnitude, label="Load Bus", linewidth=2)
-    
+
     # Save plot
     savefig(p, joinpath(output_dir, "bus_voltages.png"))
-    
+
     return p
 end
 
@@ -112,37 +112,37 @@ Generate rotor angle and speed plots.
 """
 function plot_rotor(sol, indices::StateIndices, output_dir::String)
     t = sol.t
-    
+
     # Extract rotor states
-    delta_values = [sol[indices.machine[:DELTA], i] * 180/π for i in 1:length(t)]
+    delta_values = [sol[indices.machine[:DELTA], i] * 180 / π for i in 1:length(t)]
     omega_values = [sol[indices.machine[:OMEGA], i] * 60.0 for i in 1:length(t)]
-    
+
     # Create angle plot
     p1 = plot(t, delta_values,
-        label="Rotor angle (δ)", 
-        title="Rotor Angle", 
-        linewidth=2, 
+        label="Rotor angle (δ)",
+        title="Rotor Angle",
+        linewidth=2,
         xlabel="Time (s)",
         ylabel="Angle (Degrees)",
         left_margin=10mm)
-    
+
     # Create speed plot
     p2 = plot(t, omega_values,
-        label="Rotor speed (ω)", 
-        title="Rotor Speed", 
-        linewidth=2, 
+        label="Rotor speed (ω)",
+        title="Rotor Speed",
+        linewidth=2,
         xlabel="Time (s)",
         ylabel="Speed (Hz)",
         left_margin=10mm)
-    
+
     # Save plots
     savefig(p1, joinpath(output_dir, "rotor_angle.png"))
     savefig(p2, joinpath(output_dir, "rotor_speed.png"))
-    
+
     # Combined plot
-    p_combined = plot(p1, p2, layout=(2,1), size=(800, 600))
+    p_combined = plot(p1, p2, layout=(2, 1), size=(800, 600))
     savefig(p_combined, joinpath(output_dir, "rotor_states.png"))
-    
+
     return p_combined
 end
 
@@ -153,7 +153,7 @@ Generate machine flux and other state plots.
 """
 function plot_machine_states(sol, indices::StateIndices, output_dir::String)
     t = sol.t
-    
+
     # Extract flux states
     eq_p_values = [sol[indices.machine[:EQ_P], i] for i in 1:length(t)]
     ed_p_values = [sol[indices.machine[:ED_P], i] for i in 1:length(t)]
@@ -161,12 +161,12 @@ function plot_machine_states(sol, indices::StateIndices, output_dir::String)
     psi_q_pp_values = [sol[indices.machine[:PSI_Q_PP], i] for i in 1:length(t)]
     psi_d_values = [sol[indices.machine[:PSI_D], i] for i in 1:length(t)]
     psi_q_values = [sol[indices.machine[:PSI_Q], i] for i in 1:length(t)]
-    
+
     # Create flux plots
     p = plot(t, eq_p_values,
-        label="eq'", 
-        title="Machine Fluxes", 
-        linewidth=2, 
+        label="eq'",
+        title="Machine Fluxes",
+        linewidth=2,
         xlabel="Time (s)",
         ylabel="Flux (pu)",
         left_margin=10mm)
@@ -175,10 +175,10 @@ function plot_machine_states(sol, indices::StateIndices, output_dir::String)
     plot!(p, t, psi_q_pp_values, label="ψq''", linewidth=2)
     plot!(p, t, psi_d_values, label="ψd", linewidth=2)
     plot!(p, t, psi_q_values, label="ψq", linewidth=2)
-    
+
     # Save plot
     savefig(p, joinpath(output_dir, "machine_fluxes.png"))
-    
+
     return p
 end
 
@@ -189,7 +189,7 @@ Generate line current magnitude plots.
 """
 function plot_line_currents(sol, indices::StateIndices, output_dir::String)
     t = sol.t
-    
+
     # Extract line current components
     i_12_d_values = [sol[indices.network[:I_12_D_IDX], i] for i in 1:length(t)]
     i_12_q_values = [sol[indices.network[:I_12_Q_IDX], i] for i in 1:length(t)]
@@ -197,26 +197,26 @@ function plot_line_currents(sol, indices::StateIndices, output_dir::String)
     i_23_q_values = [sol[indices.network[:I_23_Q_IDX], i] for i in 1:length(t)]
     i_13_d_values = [sol[indices.network[:I_13_D_IDX], i] for i in 1:length(t)]
     i_13_q_values = [sol[indices.network[:I_13_Q_IDX], i] for i in 1:length(t)]
-    
+
     # Transform to RI and calculate magnitudes
     _, i_12_mag = ri_dq_vector(i_12_d_values, i_12_q_values)
     _, i_23_mag = ri_dq_vector(i_23_d_values, i_23_q_values)
     _, i_13_mag = ri_dq_vector(i_13_d_values, i_13_q_values)
-    
+
     # Create plot
-    p = plot(t, i_12_mag, 
-        label="Line 1-2", 
-        title="Line Currents", 
-        linewidth=2, 
+    p = plot(t, i_12_mag,
+        label="Line 1-2",
+        title="Line Currents",
+        linewidth=2,
         xlabel="Time (s)",
         ylabel="Current (pu)",
         left_margin=10mm)
     plot!(p, t, i_23_mag, label="Line 2-3", linewidth=2)
     plot!(p, t, i_13_mag, label="Line 1-3", linewidth=2)
-    
+
     # Save plot
     savefig(p, joinpath(output_dir, "line_currents.png"))
-    
+
     return p
 end
 
@@ -227,43 +227,65 @@ Generate bus power plots.
 """
 function plot_power(sol, indices::StateIndices, output_dir::String)
     t = sol.t
-    
-    # Extract voltage and current components for buses 1 and 3
+
+    # Extract voltages
     v_1_d_values = [sol[indices.network[:V_1_D_IDX], i] for i in 1:length(t)]
     v_1_q_values = [sol[indices.network[:V_1_Q_IDX], i] for i in 1:length(t)]
+    v_2_d_values = [sol[indices.network[:V_2_D_IDX], i] for i in 1:length(t)]
+    v_2_q_values = [sol[indices.network[:V_2_Q_IDX], i] for i in 1:length(t)]
     v_3_d_values = [sol[indices.network[:V_3_D_IDX], i] for i in 1:length(t)]
     v_3_q_values = [sol[indices.network[:V_3_Q_IDX], i] for i in 1:length(t)]
-    
+
+    # Extract shunt currents at bus 2 (used to calculate injected current)
+    i_B2_d_values = [sol[indices.network[:I_B2_D_IDX], i] for i in 1:length(t)]
+    i_B2_q_values = [sol[indices.network[:I_B2_Q_IDX], i] for i in 1:length(t)]
+
+    # Extract line currents connected to bus 2 (used to calculate injected current)
+    i_12_d_values = [sol[indices.network[:I_12_D_IDX], i] for i in 1:length(t)]
+    i_12_q_values = [sol[indices.network[:I_12_Q_IDX], i] for i in 1:length(t)]
+    i_23_d_values = [sol[indices.network[:I_23_D_IDX], i] for i in 1:length(t)]
+    i_23_q_values = [sol[indices.network[:I_23_Q_IDX], i] for i in 1:length(t)]
+
+    # Extract injected currents at buses 1 and 3
     i_1_d_values = [sol[indices.network[:I_1_D_IDX], i] for i in 1:length(t)]
     i_1_q_values = [sol[indices.network[:I_1_Q_IDX], i] for i in 1:length(t)]
     i_3_d_values = [sol[indices.network[:I_3_D_IDX], i] for i in 1:length(t)]
     i_3_q_values = [sol[indices.network[:I_3_Q_IDX], i] for i in 1:length(t)]
-    
+
+    # Compute injected current at bus 2 from KCL
+    i_2_d_values = i_23_d_values .+ i_B2_d_values .- i_12_d_values          # Reconstructed by KCL
+    i_2_q_values = i_23_q_values .+ i_B2_q_values .- i_12_q_values          # Reconstructed by KCL
+
     # Transform to RI
     v_1_RI_values, _ = ri_dq_vector(v_1_d_values, v_1_q_values)
+    v_2_RI_values, _ = ri_dq_vector(v_2_d_values, v_2_q_values)
     v_3_RI_values, _ = ri_dq_vector(v_3_d_values, v_3_q_values)
     i_1_RI_values, _ = ri_dq_vector(i_1_d_values, i_1_q_values)
+    i_2_RI_values, _ = ri_dq_vector(i_2_d_values, i_2_q_values)
     i_3_RI_values, _ = ri_dq_vector(i_3_d_values, i_3_q_values)
-    
+
     # Compute power
     S_1_values = compute_S_vector(v_1_RI_values, i_1_RI_values)
+    S_2_values = compute_S_vector(v_2_RI_values, i_2_RI_values)
     S_3_values = compute_S_vector(v_3_RI_values, i_3_RI_values)
-    
+
     # Create plot
-    p = plot(t, first.(S_1_values), 
-        label="Inf. Bus (P)", 
-        title="Bus Power", 
-        linewidth=2, 
+    p = plot(t, first.(S_1_values),
+        label="Inf. Bus (P)",
+        title="Bus Power",
+        linewidth=2,
         xlabel="Time (s)",
         ylabel="Power (pu)",
         left_margin=10mm)
     plot!(p, t, last.(S_1_values), label="Inf. Bus (Q)", linewidth=2)
+    plot!(p, t, first.(S_2_values), label="Machine (P)", linewidth=2)
+    plot!(p, t, last.(S_2_values), label="Machine (Q)", linewidth=2)
     plot!(p, t, first.(S_3_values), label="Load (P)", linewidth=2)
     plot!(p, t, last.(S_3_values), label="Load (Q)", linewidth=2)
-    
+
     # Save plot
     savefig(p, joinpath(output_dir, "powers.png"))
-    
+
     return p
 end
 
@@ -274,28 +296,28 @@ Generate AVR state plots.
 """
 function plot_avr_states(sol, indices::StateIndices, output_dir::String)
     t = sol.t
-    
+
     # Extract AVR states
     efd_values = [sol[indices.avr[:EFD_IDX], i] for i in 1:length(t)]
     vs_values = [sol[indices.avr[:VS_IDX], i] for i in 1:length(t)]
     vll_values = [sol[indices.avr[:VLL_IDX], i] for i in 1:length(t)]
     vf_values = [sol[indices.avr[:VF_IDX], i] for i in 1:length(t)]
-    
+
     # Create plot
-    p = plot(t, efd_values, 
-        label="Field Voltage", 
-        title="AVR States", 
-        linewidth=2, 
+    p = plot(t, efd_values,
+        label="Field Voltage",
+        title="AVR States",
+        linewidth=2,
         xlabel="Time (s)",
         ylabel="Value (pu)",
         left_margin=10mm)
     plot!(p, t, vs_values, label="Sensed Terminal Voltage", linewidth=2)
     plot!(p, t, vll_values, label="Lead-Lag State", linewidth=2)
     plot!(p, t, vf_values, label="Feedback State", linewidth=2)
-    
+
     # Save plot
     savefig(p, joinpath(output_dir, "avr_states.png"))
-    
+
     return p
 end
 
@@ -306,26 +328,26 @@ Generate governor state plots.
 """
 function plot_governor_states(sol, indices::StateIndices, output_dir::String)
     t = sol.t
-    
+
     # Extract governor states
     fv_values = [sol[indices.governor[:FV_IDX], i] for i in 1:length(t)]
     ff_values = [sol[indices.governor[:FF_IDX], i] for i in 1:length(t)]
     et_values = [sol[indices.governor[:ET_IDX], i] for i in 1:length(t)]
-    
+
     # Create plot
-    p = plot(t, fv_values, 
-        label="Fuel Value", 
-        title="Governor States", 
-        linewidth=2, 
+    p = plot(t, fv_values,
+        label="Fuel Value",
+        title="Governor States",
+        linewidth=2,
         xlabel="Time (s)",
         ylabel="Value (pu)",
         left_margin=10mm)
     plot!(p, t, ff_values, label="Fuel Flow", linewidth=2)
     plot!(p, t, et_values, label="Exhaust Temp", linewidth=2)
-    
+
     # Save plot
     savefig(p, joinpath(output_dir, "gov_states.png"))
-    
+
     return p
 end
 
