@@ -94,18 +94,18 @@ function update_gov_states!(
 
     # State equations expressed in standard form
 
+    # dFV/dt equation (Fuel Valve - state x1)
+    # ẋ₁ = (x₂ - x₁)/T₂
+    dfv_dt = (governor_input - fv) / gov.T1
+
     # dFF/dt equation (Fuel Flow - state x2)
     # ẋ₂ = (governor_input - x₂)/T₁
     # where governor_input = min(Pref - (1/R)Δω, AT + KT(AT - x₃))
-    dff_dt = (governor_input - ff) / gov.T1
-
-    # dFV/dt equation (Fuel Valve - state x1)
-    # ẋ₁ = (x₂ - x₁)/T₂
-    dfv_dt = (ff - fv) / gov.T2
+    dff_dt = (fv - ff) / gov.T2
 
     # dET/dt equation (Exhaust Temperature - state x3)
     # ẋ₃ = (x₁ - x₃)/T₃
-    det_dt = (fv - et) / gov.T3
+    det_dt = (ff - et) / gov.T3
 
     # Update derivatives vector
     derivatives[FV_IDX] = dfv_dt
@@ -115,7 +115,7 @@ function update_gov_states!(
     # Calculate mechanical power output
     # Pm = x₁ - D_turb·Δω
     # The mechanical power is the fuel valve position minus the damping term
-    Pm = fv - gov.D_turb * delta_omega
+    Pm = ff - gov.D_turb * delta_omega
 
     # Calculate mechanical torque (P = ω * τ, so τ = P/ω)
     # Convert from power to torque for the mechanical system
