@@ -26,3 +26,4 @@ Manifest.toml
 # Custom
 *.DS_Store
 results*/
+logs/
