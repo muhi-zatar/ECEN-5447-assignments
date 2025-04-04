@@ -1,5 +1,6 @@
 # ECEN-5447-assignments
 
+```
 PowerSystemDynamics/
 ├── Project.toml          # Julia package manager file
 ├── config/               # Configuration files
@@ -33,3 +34,4 @@ PowerSystemDynamics/
     │   └── PowerFlow.jl            # Power flow wrapper
     └── types/                      # Type definitions
         └── SystemTypes.jl          # System type definitions
+```
