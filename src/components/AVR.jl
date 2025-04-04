@@ -1,8 +1,7 @@
-# Defining the module
-module EXST1Model
+module AVRComponents
 
-# Exporting the needed functions
-export EXST1, initialize_avr, update_avr_states!
+export EXST1, initialize_avr_states, update_avr_states!
+export EFD_IDX, VS_IDX, VLL_IDX, VF_IDX
 
 # AVR state indices
 const EFD_IDX = 1   # Field voltage (output of amplifier)
@@ -10,7 +9,11 @@ const VS_IDX = 2    # Sensed terminal voltage
 const VLL_IDX = 3   # Lead-lag output
 const VF_IDX = 4    # Feedback signal
 
-# IEEE Type ST1 excitation system model structure
+"""
+    EXST1
+
+IEEE Type ST1 excitation system model with parameters.
+"""
 mutable struct EXST1
     # AVR parameters
     TR::Float64      # Voltage measurement time constant (s)
@@ -39,8 +42,12 @@ mutable struct EXST1
     end
 end
 
-# Initialize AVR states for proper steady-state equilibrium
-function initialize_avr(avr::EXST1, Vt_init::Float64, Efd_init::Float64)
+"""
+    initialize_avr_states(avr::EXST1, Vt_init::Float64, Efd_init::Float64)
+
+Initialize AVR states for proper steady-state equilibrium.
+"""
+function initialize_avr_states(avr::EXST1, Vt_init::Float64, Efd_init::Float64)
     # Initialize state vector
     states = zeros(Float64, 4)
 
@@ -60,14 +67,20 @@ function initialize_avr(avr::EXST1, Vt_init::Float64, Efd_init::Float64)
     # Set Vref to achieve the required steady-state error
     # verr = Vref - vs - vf => Vref = verr + vs + vf
     avr.V_ref = steady_state_verr + states[VS_IDX] + states[VF_IDX]
-    println("V_ref value is: $(avr.V_ref)")
+    @info "V_ref value is: $(avr.V_ref)"
+    
     # Field voltage
     states[EFD_IDX] = Efd_init
 
     return states
 end
 
-# Update AVR states using state space formulation with stability focus
+"""
+    update_avr_states!(states, derivatives, Vt, avr)
+
+Update AVR states using state space formulation with stability focus.
+Returns the field voltage.
+"""
 function update_avr_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
