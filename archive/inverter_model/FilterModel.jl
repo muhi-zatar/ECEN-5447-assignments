@@ -54,17 +54,17 @@ end
     fact that the network has already translated the power flow solution into d,q components for 
     the voltage and current at the terminal.
 """
-function initialize_filter(flt::Filter, v_term::Vector{Float64}, i_term::Vector{FLoat64}, ωg::Float64)
+function initialize_filter(flt::Filter, v_term::Vector{Float64}, i_term::Vector{Float64}, ωg::Float64)
     # Initialize filter states
     states = zeros(Float64, NUM_FLT_STATES)
 
     # Unpack the voltage components
-    Vd_grd = v_term[0]
-    Vq_grd = v_term[1]
+    Vd_grd = v_term[1]
+    Vq_grd = v_term[2]
 
     # Unpack the current components
-    Id_grd = i_term[0]
-    Iq_grd = i_term[1]
+    Id_grd = i_term[1]
+    Iq_grd = i_term[2]
 
     # Start with the 5th and 6th differential equations
     Vd_flt = Vd_grd + flt.rg * Id_grd - ωg * flt.lg * Iq_grd
