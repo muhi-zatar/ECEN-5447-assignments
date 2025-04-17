@@ -3,10 +3,10 @@ module PowerFlowWrapper
 # Functions to export
 export get_powerflow_results
 
-using PowerSystems
-using PowerFlows
-const PSY = PowerSystems
-const PF = PowerFlows
+#using PowerSystems
+#using PowerFlows
+#const PSY = PowerSystems
+#const PF = PowerFlows
 
 function get_powerflow_results(network_description)
     # TODO: Add the number of bus in the input to make the output bus configurable (for return values).
