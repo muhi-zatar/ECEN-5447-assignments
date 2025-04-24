@@ -34,7 +34,8 @@ mutable struct OuterLoop
         ωf=0.1322*π*50.0,
         P_ref=0.0, # to be set in the initialization
         Q_ref=0.0, # to be set in the initialization
-        ω_ref=1.0 # to be set in the initialization
+        ω_ref=1.0, # to be set in the initialization
+        v_ref=1.0  # to be set in the initialization
     )
         return new(Rp, ωz, Kpq, Kiq, ωf, P_ref, Q_ref, v_ref, ω_ref)
     end
@@ -60,6 +61,7 @@ function initialize_outerloop(outerloop::OuterLoop, V_filter_init::Complex{Float
     # Setting the reference values
     outerloop.P_ref = p_e
     outerloop.Q_ref = q_e
+    outerloop.v_ref = abs(V_filter_init)
 
     # Settting the initial values
     states[THETA_OLC] = θ_olc
@@ -97,7 +99,7 @@ function update_outerloop_states!(
     ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
 
     # Not sure why this is needed, as it is not used in other equations
-    # v_olc_ref = outerloop.v_ref + outerloop.Kpq * (outerloop.Q_ref - q_m)
+    v_olc_ref = outerloop.v_ref + outerloop.Kpq * (outerloop.Q_ref - q_m)
     
     # Calculating the derivatives as per the outer loop control equations in the documentation
     dθ_olc = Ωb*(ω_olc - ω_sys)
@@ -109,7 +111,7 @@ function update_outerloop_states!(
     derivatives[P_M] = dp_m
     derivatives[Q_M] = dq_m
 
-    return θ_olc, p_m, q_m
+    return θ_olc, v_olc_ref
 end
 
 end # OuterLoopModel module
