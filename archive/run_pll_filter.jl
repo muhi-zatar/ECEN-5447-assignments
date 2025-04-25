@@ -171,11 +171,19 @@ function run_pll_filter(network_file)
     println("Initial Line Currents:")
     println("I_12_D: $(network_states[I_12_D_IDX])")
     println("I_12_Q: $(network_states[I_12_Q_IDX])")
-    
+
     println("Initial Filter States:")
     println("Id_inv: $(filter_states[ID_INV])")
+    println("Iq_inv: $(filter_states[IQ_INV])")
     println("Vd_flt: $(filter_states[VD_FLT])")
-    
+    println("Vq_flt: $(filter_states[VQ_FLT])")
+    println("Id_grd: $(filter_states[ID_GRD])")
+    println("Iq_grd: $(filter_states[IQ_GRD])")
+
+    println("Initial filter algebraic equations")
+    println("Vd_inv: $(Vd_inv)")
+    println("Vq_inv: $(Vq_inv)")
+
     println("Initial PLL states:")
     println("vq_pll: $(pll_states[VQ_PLL_IDX])")
     println("epsilon_pll: $(pll_states[EPSILON_IDX])")
@@ -202,11 +210,11 @@ function run_pll_filter(network_file)
         v_2_d = network_states_f64[V_2_D_IDX]
         v_2_q = network_states_f64[V_2_Q_IDX]
         v_grid = [v_2_d, v_2_q]
-        
+
         # Get filter capacitor voltage for PLL
         v_flt_d = filter_states_f64[VD_FLT]
         v_flt_q = filter_states_f64[VQ_FLT]
-        
+
         # Convert filter capacitor voltage to rectangular coordinates for PLL
         v_flt_ri = dq_ri(0.0) * [v_flt_d; v_flt_q]
 
@@ -221,10 +229,10 @@ function run_pll_filter(network_file)
 
         # Extract PLL angle
         θ_pll = pll_states_f64[THETA_IDX]
-        
+
         # For this model, we'll just use a fixed inverter voltage, as we are waiting to implement the voltage controller (TODO: check this)
         v_inv = [Vd_inv, Vq_inv]  # Using initial values from filter initialization
-        
+
         # Update filter states
         update_filter_states!(
             filter_states_f64,
@@ -238,12 +246,12 @@ function run_pll_filter(network_file)
         # Get grid-side currents from filter
         i_2_d = filter_states_f64[ID_GRD]
         i_2_q = filter_states_f64[IQ_GRD]
-        
+
         # Compute apparent power for the network
         P_terminal = v_2_d * i_2_d + v_2_q * i_2_q
         Q_terminal = v_2_q * i_2_d - v_2_d * i_2_q
         S_terminal = complex(P_terminal, Q_terminal)
-        
+
         # Update network states
         _, _, _ = update_network_states!(
             network_states_f64,
@@ -259,7 +267,11 @@ function run_pll_filter(network_file)
 
         # Print some debugging info at integer time steps
         if abs(t - round(t)) < 0.00001
-            println("t=$t: theta_pll=$(pll_states_f64[THETA_IDX]), vq_pll=$(pll_states_f64[VQ_PLL_IDX])")
+            #println("t=$t: theta_pll=$(pll_states_f64[THETA_IDX]), vq_pll=$(pll_states_f64[VQ_PLL_IDX])")
+            # print du values for debugging
+            println("du_network: $du_network")
+            println("du_filter: $du_filter")
+            println("du_pll: $du_pll")
         end
     end
 
@@ -280,16 +292,16 @@ function run_pll_filter(network_file)
     # Define the perturbation
     function affect!(integrator)
         # Choose one perturbation scenario
-        
+
         # 1. Line Trip
         integrator.p.network.R_12 = 1e6
         integrator.p.network.X_12 = 1e6
         integrator.p.network.B_1 *= 0.5
         integrator.p.network.B_2 *= 0.5
-        
+
         # 2. Frequency change
         # integrator.p.ωsys = 1.02  # 2% frequency increase
-        
+
         # 3. Load change
         # integrator.p.network.Z_L *= 0.85  # 15% load increase
     end
@@ -303,13 +315,13 @@ function run_pll_filter(network_file)
     t = sol.t
 
     # Create plots
-    
+
     # Network voltages
     p1 = plot(t, [sol[network_idx[V_2_D_IDX], i] for i in 1:length(t)],
         label="Vd", title="Bus 2 Voltage", linewidth=2)
     plot!(p1, t, [sol[network_idx[V_2_Q_IDX], i] for i in 1:length(t)],
         label="Vq", linewidth=2)
-    
+
     # Filter currents
     p2 = plot(t, [sol[filter_idx[ID_INV], i] for i in 1:length(t)],
         label="Id_inv", title="Filter Currents", linewidth=2)
@@ -319,26 +331,26 @@ function run_pll_filter(network_file)
         label="Id_grd", linewidth=2)
     plot!(p2, t, [sol[filter_idx[IQ_GRD], i] for i in 1:length(t)],
         label="Iq_grd", linewidth=2)
-    
+
     # Filter voltages
     p3 = plot(t, [sol[filter_idx[VD_FLT], i] for i in 1:length(t)],
         label="Vd_flt", title="Filter Capacitor Voltage", linewidth=2)
     plot!(p3, t, [sol[filter_idx[VQ_FLT], i] for i in 1:length(t)],
         label="Vq_flt", linewidth=2)
-    
+
     # PLL states
     p4 = plot(t, [sol[pll_idx[THETA_IDX], i] for i in 1:length(t)],
         label="θ_pll", title="PLL Angle", linewidth=2)
-    
+
     p5 = plot(t, [sol[pll_idx[VQ_PLL_IDX], i] for i in 1:length(t)],
         label="vq_pll", title="PLL q-axis Voltage", linewidth=2)
-    
+
     # Line currents
-    p6 = plot(t, [sol[network_idx[I_12_D_IDX], i] for i in 1:length(t)], 
+    p6 = plot(t, [sol[network_idx[I_12_D_IDX], i] for i in 1:length(t)],
         title="Line Currents", label="I_12_D", linewidth=2)
-    plot!(p6, t, [sol[network_idx[I_12_Q_IDX], i] for i in 1:length(t)], 
+    plot!(p6, t, [sol[network_idx[I_12_Q_IDX], i] for i in 1:length(t)],
         label="I_12_Q", linewidth=2)
-    
+
     # Combine plots
     p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1200, 1800), left_margin=10mm)
     savefig(p_combined, "pll_filter_results.png")

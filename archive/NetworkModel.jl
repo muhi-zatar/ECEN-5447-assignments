@@ -81,15 +81,11 @@ function dq_transformer(voltage, current, voltage_angle, current_angle)
     # First, calculate with ri_dq function
     v_dq = ri_dq(voltage_angle) * voltage
     i_dq = ri_dq(current_angle) * current
-    println("DQ Voltage = $v_dq")
-    println("DQ Current = $i_dq")
 
     #####
     # Try the reverse
     v_ri = dq_ri(voltage_angle) * v_dq
     i_ri = dq_ri(current_angle) * i_dq
-    println("RI Voltage = $v_ri")
-    println("RI Current = $i_ri")
 
     return v_dq, i_dq
 end

@@ -150,8 +150,7 @@ function run_inverter_model(network_file)
     V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]  # Convert DQ to RI
 
     # Convert grid-side current from the filter to RI for Outer Loop initialization
-    I_flt_ri = dq_ri(0.0) * [Id_grd, Iq_grd]
-
+    I_flt_ri = dq_ri(0.0) * [Id_grd; Iq_grd]
 
     # Initialize PLL states with filter capacitor voltage
     pll_states = initialize_pll(pll, V_flt_ri)
@@ -211,6 +210,10 @@ function run_inverter_model(network_file)
     println("Id_grd: $(filter_states[ID_GRD])")
     println("Iq_grd: $(filter_states[IQ_GRD])")
 
+    println("Initial filter algebraic equations")
+    println("Vd_inv: $(Vd_inv)")
+    println("Vq_inv: $(Vq_inv)")
+
     println("Initial PLL states:")
     println("vq_pll: $(pll_states[VQ_PLL_IDX])")
     println("epsilon_pll: $(pll_states[EPSILON_IDX])")
@@ -220,6 +223,9 @@ function run_inverter_model(network_file)
     println("δθ_olc0: $(outerloop_states[THETA_OLC])")
     println("P_M: $(outerloop_states[P_M])")
     println("Q_M: $(outerloop_states[Q_M])")
+
+    println("Initial OuterLoop algebraic variables:")
+    println("v_olc_ref0: $(v_olc_ref0)")
 
     println("Initial InnerLoop states:")
     println("ξ_d: $(innerloop_states[XI_D_IDX])")
