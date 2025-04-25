@@ -42,14 +42,15 @@ mutable struct OuterLoop
 end
 
 # Initialize Outer Loop states
-function initialize_outerloop(outerloop::OuterLoop, V_filter_init::Complex{Float64}, I_filter_init::Complex{Float64})
+function initialize_outerloop(outerloop::OuterLoop, V_filter_init::AbstractArray{Float64}, I_filter_init::AbstractArray{Float64})
     # This function initializes the outer loop controller states
     states = zeros(Float64, 3)
 
-    vr_filter = real(V_filter_init)
-    vi_filter = imag(V_filter_init)
-    ir_filter = real(I_filter_init)
-    ii_filter = imag(I_filter_init)
+    vr_filter = V_filter_init[1]
+    vi_filter = V_filter_init[2]
+    ir_filter = I_filter_init[1]
+    ii_filter = I_filter_init[2]
+
 
     # Calculating initial values for active and reactive
     p_e = vr_filter * ir_filter + vi_filter * ii_filter
@@ -61,7 +62,7 @@ function initialize_outerloop(outerloop::OuterLoop, V_filter_init::Complex{Float
     # Setting the reference values
     outerloop.P_ref = p_e
     outerloop.Q_ref = q_e
-    outerloop.v_ref = abs(V_filter_init)
+    outerloop.v_ref = sqrt(vr_filter^2 + vi_filter^2)
 
     # TODO: Check if these are correct:
     q_m = outerloop.Q_ref
