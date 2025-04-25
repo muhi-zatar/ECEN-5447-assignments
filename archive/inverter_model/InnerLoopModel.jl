@@ -50,7 +50,7 @@ mutable struct InnerLoop
     k_ffi::Float64    # Binary variable enabling current feed-forward in output of current controllers
     ω_ad::Float64     # Active damping low pass filter cut-off frequency
     k_ad::Float64     # Active damping gain
-
+    l_f::Float64     # Filter inductance in pu
     # Constructor with default values
     function InnerLoop(;
         k_pv=0.59,
@@ -62,9 +62,10 @@ mutable struct InnerLoop
         k_ic=14.3,
         k_ffi=0.0,
         ω_ad=50.0,
-        k_ad=0.2
+        k_ad=0.2,
+        l_f=0.08
     )
-        return new(k_pv, k_iv, k_ffv, r_v, l_v, k_pc, k_ic, k_ffi, ω_ad, k_ad)
+        return new(k_pv, k_iv, k_ffv, r_v, l_v, k_pc, k_ic, k_ffi, ω_ad, k_ad, l_f)
     end
 end
 
