@@ -50,7 +50,6 @@ mutable struct InnerLoop
     k_ffi::Float64    # Binary variable enabling current feed-forward in output of current controllers
     ω_ad::Float64     # Active damping low pass filter cut-off frequency
     k_ad::Float64     # Active damping gain
-    l_f::Float64     # Filter inductance in pu
     # Constructor with default values
     function InnerLoop(;
         k_pv=0.59,
@@ -62,10 +61,9 @@ mutable struct InnerLoop
         k_ic=14.3,
         k_ffi=0.0,
         ω_ad=50.0,
-        k_ad=0.2,
-        l_f=0.08
+        k_ad=0.2
     )
-        return new(k_pv, k_iv, k_ffv, r_v, l_v, k_pc, k_ic, k_ffi, ω_ad, k_ad, l_f)
+        return new(k_pv, k_iv, k_ffv, r_v, l_v, k_pc, k_ic, k_ffi, ω_ad, k_ad)
     end
 end
 
@@ -85,6 +83,7 @@ function initialize_innerloop(
     Vd_inv::Float64,            # Inverter output voltage (from filter initialization)
     Vq_inv::Float64,            # Inverter output voltage (from filter initialization)
     c_f::Float64,               # Filter capacitance
+    l_f::Float64                # Filter inductance
 )
 
     # Use a non-linear solver function to find initial states
@@ -129,8 +128,8 @@ function initialize_innerloop(
         i_q_cv_ref = innerloop.k_pv * (v_q_vi_ref - v_q) + innerloop.k_iv * ξ_q + c_f * ω_olc0 * v_d + innerloop.k_ffi * i_q
 
         # Reference signal voltage calculations (1k and 1l)     TODO: Find out what these are used for / what they are
-        v_d_refsignal = innerloop.k_pc * (i_d_cv_ref - i_d_cv) + innerloop.k_ic * γ_d - ω_olc0 * innerloop.l_f * i_q_cv + innerloop.k_ffv * v_d - innerloop.k_ad * (v_d - ϕ_d)
-        v_q_refsignal = innerloop.k_pc * (i_q_cv_ref - i_q_cv) + innerloop.k_ic * γ_q + ω_olc0 * innerloop.l_f * i_d_cv + innerloop.k_ffv * v_q - innerloop.k_ad * (v_q - ϕ_q)
+        v_d_refsignal = innerloop.k_pc * (i_d_cv_ref - i_d_cv) + innerloop.k_ic * γ_d - ω_olc0 * l_f * i_q_cv + innerloop.k_ffv * v_d - innerloop.k_ad * (v_d - ϕ_d)
+        v_q_refsignal = innerloop.k_pc * (i_q_cv_ref - i_q_cv) + innerloop.k_ic * γ_q + ω_olc0 * l_f * i_d_cv + innerloop.k_ffv * v_q - innerloop.k_ad * (v_q - ϕ_q)
 
         #----- Residuals -----#
         out[1] = v_d_vi_ref - v_d
@@ -190,6 +189,7 @@ function update_innerloop_states!(
     ω_olc::Float64,             # Outer-loop controller frequency
     v_olc_ref::Float64,         # Outer-loop controller reference voltage
     c_f::Float64,               # Filter capacitance
+    l_f::Float64,               # Filter inductance
     innerloop::InnerLoop
 )
     # Extract state variables
@@ -226,8 +226,8 @@ function update_innerloop_states!(
     i_q_cv_ref = innerloop.k_pv * (v_q_vi_ref - v_q) + innerloop.k_iv * ξ_q + c_f * ω_olc * v_d + innerloop.k_ffi * i_q
 
     # Reference signal voltage calculations (1k and 1l)
-    v_d_refsignal = innerloop.k_pc * (i_d_cv_ref - i_d_cv) + innerloop.k_ic * γ_d - ω_olc * innerloop.l_f * i_q_cv + innerloop.k_ffv * v_d - innerloop.k_ad * (v_d - ϕ_d)
-    v_q_refsignal = innerloop.k_pc * (i_q_cv_ref - i_q_cv) + innerloop.k_ic * γ_q + ω_olc * innerloop.l_f * i_d_cv + innerloop.k_ffv * v_q - innerloop.k_ad * (v_q - ϕ_q)
+    v_d_refsignal = innerloop.k_pc * (i_d_cv_ref - i_d_cv) + innerloop.k_ic * γ_d - ω_olc * l_f * i_q_cv + innerloop.k_ffv * v_d - innerloop.k_ad * (v_d - ϕ_d)
+    v_q_refsignal = innerloop.k_pc * (i_q_cv_ref - i_q_cv) + innerloop.k_ic * γ_q + ω_olc * l_f * i_d_cv + innerloop.k_ffv * v_q - innerloop.k_ad * (v_q - ϕ_q)
 
     #----- Differential Equations -----#
     derivatives[XI_D_IDX] = v_d_vi_ref - v_d                    # (1a)

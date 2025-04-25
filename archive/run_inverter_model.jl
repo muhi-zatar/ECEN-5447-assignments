@@ -163,7 +163,7 @@ function run_inverter_model(network_file)
     V_dc = 600.0
 
     # Initialize Inner Loop states with lots of stuff
-    innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf)
+    innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
 
     # Combine all states
     states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states)
@@ -311,6 +311,7 @@ function run_inverter_model(network_file)
             ω_olc,
             v_olc_ref,
             params.filter.cf,
+            params.filter.lf,
             params.innerloop
         )
 
