@@ -333,7 +333,7 @@ function run_inverter_model(network_file)
         S_terminal = complex(P_terminal, Q_terminal)
 
         # 5. Update network states
-        V_terminal, S_terminal, I_terminal, i_2_d, i_2_q = update_network_states!(
+        _, _, _, _, _ = update_network_states!(
             network_states_f64,
             du_network,
             S_terminal,
