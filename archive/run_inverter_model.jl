@@ -205,7 +205,11 @@ function run_inverter_model(network_file)
 
     println("Initial Filter States:")
     println("Id_inv: $(filter_states[ID_INV])")
+    println("Iq_inv: $(filter_states[IQ_INV])")
     println("Vd_flt: $(filter_states[VD_FLT])")
+    println("Vq_flt: $(filter_states[VQ_FLT])")
+    println("Id_grd: $(filter_states[ID_GRD])")
+    println("Iq_grd: $(filter_states[IQ_GRD])")
 
     println("Initial PLL states:")
     println("vq_pll: $(pll_states[VQ_PLL_IDX])")
@@ -215,7 +219,7 @@ function run_inverter_model(network_file)
     println("Initial OuterLoop states:")
     println("δθ_olc0: $(outerloop_states[THETA_OLC])")
     println("P_M: $(outerloop_states[P_M])")
-    println("P_M: $(outerloop_states[Q_M])")
+    println("Q_M: $(outerloop_states[Q_M])")
 
     println("Initial InnerLoop states:")
     println("ξ_d: $(innerloop_states[XI_D_IDX])")
@@ -316,7 +320,10 @@ function run_inverter_model(network_file)
         )
 
         # Prepare inverter voltage for filter update
-        v_inv = [v_d_refsignal, v_q_refsignal]
+        # Convert to real,imaginary components to prepare for network transformation
+        v_inv_ri = (v_d_refsignal + im * v_q_refsignal) * exp(im * δθ_olc)
+        #Convert to network dq
+        v_inv = ri_dq(0) * [real(v_inv_ri), imag(v_inv_ri)]
 
         # 4. Update filter states
         update_filter_states!(
