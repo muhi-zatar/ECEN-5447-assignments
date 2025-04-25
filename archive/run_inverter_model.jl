@@ -159,10 +159,13 @@ function run_inverter_model(network_file)
     outerloop_states, v_olc_ref0, δθ_olc0 = initialize_outerloop(outerloop, V_flt_ri, I_flt_ri)
 
     # Stand-in for DC-side model. TODO: Replace with actual model (?) V_dc is only used for getting m_dq for PWM model
-    V_dc = 600.0
+    V_dc = 1.0
 
     # Initialize Inner Loop states with lots of stuff
     innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
+
+    # Override outer loop's initial guess at the angle
+    outerloop_states[THETA_OLC] = δθ_olc
 
     # Combine all states
     states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states)
@@ -207,8 +210,12 @@ function run_inverter_model(network_file)
     println("Iq_inv: $(filter_states[IQ_INV])")
     println("Vd_flt: $(filter_states[VD_FLT])")
     println("Vq_flt: $(filter_states[VQ_FLT])")
+    println("Vr_flt: $(V_flt_ri[1])")
+    println("Vi_flt: $(V_flt_ri[2])")
     println("Id_grd: $(filter_states[ID_GRD])")
     println("Iq_grd: $(filter_states[IQ_GRD])")
+    println("Ir_flt: $(I_flt_ri[1])")
+    println("Ii_flt: $(I_flt_ri[2])")
 
     println("Initial filter algebraic equations")
     println("Vd_inv: $(Vd_inv)")
@@ -327,7 +334,7 @@ function run_inverter_model(network_file)
 
         # Prepare inverter voltage for filter update
         # Convert to real,imaginary components to prepare for network transformation
-        v_inv_ri = (v_d_refsignal + im * v_q_refsignal) * exp(im * δθ_olc)
+        v_inv_ri = (v_d_refsignal + im * v_q_refsignal) * exp(im * (δθ_olc + π / 2))
         #Convert to network dq
         v_inv = ri_dq(0) * [real(v_inv_ri); imag(v_inv_ri)]
 
