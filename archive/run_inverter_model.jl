@@ -323,7 +323,7 @@ function run_inverter_model(network_file)
         # Convert to real,imaginary components to prepare for network transformation
         v_inv_ri = (v_d_refsignal + im * v_q_refsignal) * exp(im * δθ_olc)
         #Convert to network dq
-        v_inv = ri_dq(0) * [real(v_inv_ri), imag(v_inv_ri)]
+        v_inv = ri_dq(0) * [real(v_inv_ri); imag(v_inv_ri)]
 
         # 4. Update filter states
         update_filter_states!(
