@@ -323,7 +323,7 @@ function run_inverter_model(network_file)
             du_filter,
             v_inv,
             v_grid,
-            ω_olc,  # Using ω_olc from outer loop
+            params.ωsys,
             params.filter
         )
 
