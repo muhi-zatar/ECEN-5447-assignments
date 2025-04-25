@@ -24,14 +24,14 @@ mutable struct OuterLoop
     Q_ref::Float64    # Reactive power reference
     v_ref::Float64    # Voltage reference
     ω_ref::Float64    # Frequency reference
-    
+
     # Constructor with default values
     function OuterLoop(;
         Rp=0.05,
-        ωz=2π*60,
+        ωz=2π * 60,
         Kpq=2.0,
         Kiq=30.0,
-        ωf=0.1322*π*50.0,
+        ωf=0.1322 * π * 50.0,
         P_ref=0.0, # to be set in the initialization
         Q_ref=0.0, # to be set in the initialization
         ω_ref=1.0, # to be set in the initialization
@@ -54,7 +54,7 @@ function initialize_outerloop(outerloop::OuterLoop, V_filter_init::Complex{Float
     # Calculating initial values for active and reactive
     p_e = vr_filter * ir_filter + vi_filter * ii_filter
     q_e = vi_filter * ir_filter - vr_filter * ii_filter
-    
+
     # Inital value for θ_olc (unsure about this)
     θ_olc = atan(vi_filter / vr_filter)
 
@@ -63,12 +63,16 @@ function initialize_outerloop(outerloop::OuterLoop, V_filter_init::Complex{Float
     outerloop.Q_ref = q_e
     outerloop.v_ref = abs(V_filter_init)
 
+    # TODO: Check if these are correct:
+    q_m = outerloop.Q_ref
+    v_olc_ref = outerloop.v_ref
+
     # Settting the initial values
     states[THETA_OLC] = θ_olc
     states[P_M] = p_e
     states[Q_M] = q_e
 
-    return states
+    return states, v_olc_ref, θ_olc
 end
 
 # Update Outer Loop states
@@ -76,8 +80,8 @@ function update_outerloop_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
     # vdc::Float64,
-    V_filter::Complex{Float64},
-    I_filter::Complex{Float64},
+    V_filter::AbstractArray{Float64},
+    I_filter::AbstractArray{Float64},
     ω_sys::Float64,
     outerloop::OuterLoop
 )
@@ -87,10 +91,10 @@ function update_outerloop_states!(
     q_m = states[Q_M]
 
     # Extracting Filter voltage and current
-    vr_filter = real(V_filter)
-    vi_filter = imag(V_filter)
-    ir_filter = real(I_filter)
-    ii_filter = imag(I_filter)
+    vr_filter = V_filter[1]
+    vi_filter = V_filter[2]
+    ir_filter = I_filter[1]
+    ii_filter = I_filter[2]
 
     # Calculating necessary parameters (TODO: extract 60.0 from base frequency (this is fine for now))
     Ωb = 2π * 60.0
@@ -100,9 +104,9 @@ function update_outerloop_states!(
 
     # Not sure why this is needed, as it is not used in other equations
     v_olc_ref = outerloop.v_ref + outerloop.Kpq * (outerloop.Q_ref - q_m)
-    
+
     # Calculating the derivatives as per the outer loop control equations in the documentation
-    dθ_olc = Ωb*(ω_olc - ω_sys)
+    dθ_olc = Ωb * (ω_olc - ω_sys)
     dp_m = outerloop.ωz * (p_e - p_m)
     dq_m = outerloop.ωf * (q_e - q_m)
 
@@ -111,7 +115,7 @@ function update_outerloop_states!(
     derivatives[P_M] = dp_m
     derivatives[Q_M] = dq_m
 
-    return θ_olc, v_olc_ref
+    return θ_olc, v_olc_ref, ω_olc
 end
 
 end # OuterLoopModel module

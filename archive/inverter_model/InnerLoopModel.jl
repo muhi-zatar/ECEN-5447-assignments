@@ -224,7 +224,7 @@ function update_innerloop_states!(
     i_d_cv_ref = innerloop.k_pv * (v_d_vi_ref - v_d) + innerloop.k_iv * ξ_d - c_f * ω_olc * v_q + innerloop.k_ffi * i_d
     i_q_cv_ref = innerloop.k_pv * (v_q_vi_ref - v_q) + innerloop.k_iv * ξ_q + c_f * ω_olc * v_d + innerloop.k_ffi * i_q
 
-    # Reference signal voltage calculations (1k and 1l)     TODO: Find out what these are used for / what they are
+    # Reference signal voltage calculations (1k and 1l)
     v_d_refsignal = innerloop.k_pc * (i_d_cv_ref - i_d_cv) + innerloop.k_ic * γ_d - ω_olc * innerloop.l_f * i_q_cv + innerloop.k_ffv * v_d - innerloop.k_ad * (v_d - ϕ_d)
     v_q_refsignal = innerloop.k_pc * (i_q_cv_ref - i_q_cv) + innerloop.k_ic * γ_q + ω_olc * innerloop.l_f * i_d_cv + innerloop.k_ffv * v_q - innerloop.k_ad * (v_q - ϕ_q)
 
@@ -235,6 +235,8 @@ function update_innerloop_states!(
     derivatives[GAMMA_Q_IDX] = i_q_cv_ref - i_q_cv              # (1c)
     derivatives[PHI_D_IDX] = innerloop.ω_ad * (v_d - ϕ_d)       # (1e)
     derivatives[PHI_Q_IDX] = innerloop.ω_ad * (v_q - ϕ_q)       # (1f)
+
+    return v_d_refsignal, v_q_refsignal
 end
 
 end # InnerLoopModel module
