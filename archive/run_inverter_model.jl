@@ -158,23 +158,40 @@ function run_inverter_model(network_file)
     println("Vq_flt: $(Vq_flt)")
     # exit()
     # Convert filter capacitor voltage to RI for PLL initialization
-    V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]  # Convert DQ to RI
-
+    # V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]  # Convert DQ to RI
+    V_flt_ri = [Vd_flt; Vq_flt]
+    # V_flt_ri = [Vd_flt; Vq_flt]  # Keep as DQ for PLL initialization
     # Convert grid-side current from the filter to RI for Outer Loop initialization
     I_flt_ri = dq_ri(0.0) * [Id_grd; Iq_grd]
-
+    #I_flt_ri = [Id_grd; Iq_grd]  # Keep as DQ for Outer Loop initialization
     # Initialize PLL states with filter capacitor voltage
+    println("V_flt_ri: $(V_flt_ri)")
+    println("I_flt_ri: $(I_flt_ri)")
     pll_states = initialize_pll(pll, V_flt_ri)
-
+    println("PLL states:")
+    println("vq_pll: $(pll_states[VQ_PLL_IDX])")
+    println("epsilon_pll: $(pll_states[EPSILON_IDX])")
+    println("theta_pll: $(pll_states[THETA_IDX])")
+    # exit()
     # Initialize Outer Loop states with lots of stuff
     outerloop_states, v_olc_ref0, δθ_olc0 = initialize_outerloop(outerloop, V_flt_ri, I_flt_ri)
-
+    println("Outer Loop states:")
+    println("δθ_olc0: $(outerloop_states[THETA_OLC])")
+    println("P_M: $(outerloop_states[P_M])")
+    println("Q_M: $(outerloop_states[Q_M])")
     # Stand-in for DC-side model. TODO: Replace with actual model (?) V_dc is only used for getting m_dq for PWM model
     V_dc = 1.0
 
     # Initialize Inner Loop states with lots of stuff
     innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
-
+    println("Inner Loop states:")
+    println("ξ_d: $(innerloop_states[XI_D_IDX])")
+    println("ξ_q: $(innerloop_states[XI_Q_IDX])")
+    println("γ_d: $(innerloop_states[GAMMA_D_IDX])")
+    println("γ_q: $(innerloop_states[GAMMA_Q_IDX])")
+    println("ϕ_d: $(innerloop_states[PHI_D_IDX])")
+    println("ϕ_q: $(innerloop_states[PHI_Q_IDX])")
+    exit()
     # Override outer loop's initial guess at the angle
     outerloop_states[THETA_OLC] = δθ_olc
 
@@ -216,50 +233,51 @@ function run_inverter_model(network_file)
     println("I_12_D: $(network_states[I_12_D_IDX])")
     println("I_12_Q: $(network_states[I_12_Q_IDX])")
 
-    println("Initial Filter States:")
-    println("Id_inv: $(filter_states[ID_INV])")
-    println("Iq_inv: $(filter_states[IQ_INV])")
-    println("Vd_flt: $(filter_states[VD_FLT])")
-    println("Vq_flt: $(filter_states[VQ_FLT])")
-    println("Vr_flt: $(V_flt_ri[1])")
-    println("Vi_flt: $(V_flt_ri[2])")
-    println("Id_grd: $(filter_states[ID_GRD])")
-    println("Iq_grd: $(filter_states[IQ_GRD])")
-    println("Ir_flt: $(I_flt_ri[1])")
-    println("Ii_flt: $(I_flt_ri[2])")
+    # println("Initial Filter States:")
+    # println("Id_inv: $(filter_states[ID_INV])")
+    # println("Iq_inv: $(filter_states[IQ_INV])")
+    # println("Vd_flt: $(filter_states[VD_FLT])")
+    # println("Vq_flt: $(filter_states[VQ_FLT])")
+    # println("Vr_flt: $(V_flt_ri[1])")
+    # println("Vi_flt: $(V_flt_ri[2])")
+    # println("Id_grd: $(filter_states[ID_GRD])")
+    # println("Iq_grd: $(filter_states[IQ_GRD])")
+    # println("Ir_flt: $(I_flt_ri[1])")
+    # println("Ii_flt: $(I_flt_ri[2])")
 
-    println("Initial filter algebraic equations")
-    println("Vd_inv: $(Vd_inv)")
-    println("Vq_inv: $(Vq_inv)")
+    # println("Initial filter algebraic equations")
+    # println("Vd_inv: $(Vd_inv)")
+    # println("Vq_inv: $(Vq_inv)")
 
-    println("Initial PLL states:")
-    println("vq_pll: $(pll_states[VQ_PLL_IDX])")
-    println("epsilon_pll: $(pll_states[EPSILON_IDX])")
-    println("theta_pll: $(pll_states[THETA_IDX])")
+    # println("Initial PLL states:")
+    # println("vq_pll: $(pll_states[VQ_PLL_IDX])")
+    # println("epsilon_pll: $(pll_states[EPSILON_IDX])")
+    # println("theta_pll: $(pll_states[THETA_IDX])")
 
-    println("Initial OuterLoop states:")
-    println("δθ_olc0: $(outerloop_states[THETA_OLC])")
-    println("P_M: $(outerloop_states[P_M])")
-    println("Q_M: $(outerloop_states[Q_M])")
+    # println("Initial OuterLoop states:")
+    # println("δθ_olc0: $(outerloop_states[THETA_OLC])")
+    # println("P_M: $(outerloop_states[P_M])")
+    # println("Q_M: $(outerloop_states[Q_M])")
 
-    println("Initial OuterLoop algebraic variables:")
-    println("v_olc_ref0: $(v_olc_ref0)")
+    # println("Initial OuterLoop algebraic variables:")
+    # println("v_olc_ref0: $(v_olc_ref0)")
 
-    println("Initial InnerLoop states:")
-    println("ξ_d: $(innerloop_states[XI_D_IDX])")
-    println("ξ_q: $(innerloop_states[XI_Q_IDX])")
-    println("γ_d: $(innerloop_states[GAMMA_D_IDX])")
-    println("γ_q: $(innerloop_states[GAMMA_Q_IDX])")
-    println("ϕ_d: $(innerloop_states[PHI_D_IDX])")
-    println("ϕ_q: $(innerloop_states[PHI_Q_IDX])")
+    # println("Initial InnerLoop states:")
+    # println("ξ_d: $(innerloop_states[XI_D_IDX])")
+    # println("ξ_q: $(innerloop_states[XI_Q_IDX])")
+    # println("γ_d: $(innerloop_states[GAMMA_D_IDX])")
+    # println("γ_q: $(innerloop_states[GAMMA_Q_IDX])")
+    # println("ϕ_d: $(innerloop_states[PHI_D_IDX])")
+    # println("ϕ_q: $(innerloop_states[PHI_Q_IDX])")
 
-    println("InnerLoop Initialization Has Updated:")
-    println("δθ_olc: $(δθ_olc)")
-    println("v_olc_ref: $(v_olc_ref)")
+    # println("InnerLoop Initialization Has Updated:")
+    # println("δθ_olc: $(δθ_olc)")
+    # println("v_olc_ref: $(v_olc_ref)")
 
-    println("InnerLoop Initialization Has Found:")
-    println("m0_d: $(m0_d)")
-    println("m0_q: $(m0_q)")
+    # println("InnerLoop Initialization Has Found:")
+    # println("m0_d: $(m0_d)")
+    # println("m0_q: $(m0_q)")
+    # exit()
 
     # System dynamics function
     function inverter_dynamics!(du, u, params, t)
