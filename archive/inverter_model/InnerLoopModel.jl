@@ -231,7 +231,7 @@ function update_innerloop_states!(
 
     #----- Differential Equations -----#
     derivatives[XI_D_IDX] = v_d_vi_ref - v_d                    # (1a)
-    derivatives[XI_D_IDX] = v_q_vi_ref - v_q                    # (1b)
+    derivatives[XI_Q_IDX] = v_q_vi_ref - v_q                    # (1b)
     derivatives[GAMMA_D_IDX] = i_d_cv_ref - i_d_cv              # (1c)
     derivatives[GAMMA_Q_IDX] = i_q_cv_ref - i_q_cv              # (1c)
     derivatives[PHI_D_IDX] = innerloop.ω_ad * (v_d - ϕ_d)       # (1e)
