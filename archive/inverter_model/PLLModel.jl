@@ -55,9 +55,8 @@ function initialize_pll(pll::PLL, v_init::Vector{Float64})
     states = zeros(Float64, 3)
 
     # Extract grid voltage components (will be filter when intergrated)
-    vr, vi = v_init
-    # vr = v_init[1] # Real part of grid voltage
-    # vi = v_init[2] # Imaginary part of grid voltage
+    vr = v_init[1] # Real part of grid voltage
+    vi = v_init[2] # Imaginary part of grid voltage
 
     # θ_init = atan(vi, vr) # Using atan2 equivalent for correct quadrant
 

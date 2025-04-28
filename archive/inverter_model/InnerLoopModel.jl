@@ -36,6 +36,13 @@ const PHI_Q_IDX = 6
 # Tolerance for NLsolve
 const STRICT_NLSOLVE_F_TOLERANCE = 1e-8
 
+function ri_dq(δ::T) where {T<:Number}
+    #Uses the reference frame of the Kundur page 852 of RI to dq
+    return Float64[
+        sin(δ) -cos(δ)
+        cos(δ) sin(δ)
+    ]
+end
 
 # Inner Loop model structure
 mutable struct InnerLoop
@@ -85,6 +92,9 @@ function initialize_innerloop(
     c_f::Float64,               # Filter capacitance
     l_f::Float64                # Filter inductance
 )
+
+    Vd_inv0 = Vd_inv
+    Vq_inv0 = Vq_inv
 
     # Use a non-linear solver function to find initial states
     function f!(out, x)
@@ -143,7 +153,7 @@ function initialize_innerloop(
     end
 
     # Initial guess and solution
-    x0 = [δθ_olc0, v_olc_ref0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    x0 = [δθ_olc0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     sol = NLsolve.nlsolve(f!, x0, ftol=STRICT_NLSOLVE_F_TOLERANCE)
     if !NLsolve.converged(sol)
         @warn("Inner loop initialization failed")
@@ -166,9 +176,9 @@ function initialize_innerloop(
         states[PHI_Q_IDX] = x0[8]
 
         # Converter modulation
-        m0_dq = (Vd_inv + im * Vq_inv) * exp(im * (δθ_olc + π / 2)) / V_dc
-        m0_d = real(m0_dq)
-        m0_q = imag(m0_dq)
+        m0_dq = (ri_dq(δθ_olc + π / 2) * [Vd_inv0; Vq_inv0]) ./ V_dc
+        m0_d = m0_dq[1]
+        m0_q = m0_dq[2]
 
     end
 

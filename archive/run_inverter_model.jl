@@ -125,7 +125,13 @@ function run_inverter_model(network_file)
     innerloop = InnerLoop()
 
     # Initialize network states
+    # Return values are in Network DQ – which the filter should use
     network_states, Id_grd, Iq_grd = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
+
+    # Debugging
+    println("Initial Line Currents:")
+    println("I_12_D: $(network_states[I_12_D_IDX])")
+    println("I_12_Q: $(network_states[I_12_Q_IDX])")
 
     # Extract terminal voltage at the inverter bus (in network DQ)
     Vd_grd = network_states[V_2_D_IDX]
@@ -134,9 +140,12 @@ function run_inverter_model(network_file)
     # System frequency (per unit)
     ωsys = 1.0
 
-    # Initialize filter states
+    # Pack DQ values into a vector to pass to filter initialization routine
     v_term = [Vd_grd, Vq_grd]
     i_term = [Id_grd, Iq_grd]
+
+    # Initialize filter states
+    # Returns inverter voltages in DQ of the network
     filter_states, Vd_inv, Vq_inv = initialize_filter(filter, v_term, i_term, ωsys)
 
     # Unpack initial filter states for other components to use
@@ -146,17 +155,56 @@ function run_inverter_model(network_file)
     Vq_flt = filter_states[VQ_FLT]
     # NOTE: Id_grd, Iq_grd are filter states, but they've already been calculated by the network initialization
 
+    # TODO: Try both:
+    # 1) Convert back to RI for PLL and Outer Loop initialization
+    # 2) Keep in network DQ for PLL and Outer Loop initialization
+
     # Convert filter capacitor voltage to RI for PLL initialization
-    V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]  # Convert DQ to RI
+    V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]  # Option 1: Convert DQ to RI
+    V_flt = [Vd_flt; Vq_flt]    # Option 2: Keep as network DQ
 
     # Convert grid-side current from the filter to RI for Outer Loop initialization
-    I_flt_ri = dq_ri(0.0) * [Id_grd; Iq_grd]
+    I_flt_ri = dq_ri(0.0) * [Id_grd; Iq_grd]  # Option 1: Convert DQ to RI
+    I_flt = [Id_grd; Iq_grd]    # Option 2: Keep as network DQ
+
+
+    # Debugging
+    println("Initial Filter States:")
+    println("Id_inv: $(filter_states[ID_INV])")
+    println("Iq_inv: $(filter_states[IQ_INV])")
+    println("Vd_flt: $(filter_states[VD_FLT])")
+    println("Vq_flt: $(filter_states[VQ_FLT])")
+    println("Id_grd: $(filter_states[ID_GRD])")
+    println("Iq_grd: $(filter_states[IQ_GRD])")
+    println("Vr_flt: $(V_flt_ri[1])")
+    println("Vi_flt: $(V_flt_ri[2])")
+    println("Ir_flt: $(I_flt_ri[1])")
+    println("Ii_flt: $(I_flt_ri[2])")
+
+    println("Initial filter algebraic equations")
+    println("Vd_inv: $(Vd_inv)")
+    println("Vq_inv: $(Vq_inv)")
 
     # Initialize PLL states with filter capacitor voltage
     pll_states = initialize_pll(pll, V_flt_ri)
 
+    # Debugging
+    println("Initial PLL states:")
+    println("vq_pll: $(pll_states[VQ_PLL_IDX])")
+    println("epsilon_pll: $(pll_states[EPSILON_IDX])")
+    println("theta_pll: $(pll_states[THETA_IDX])")
+
     # Initialize Outer Loop states with lots of stuff
     outerloop_states, v_olc_ref0, δθ_olc0 = initialize_outerloop(outerloop, V_flt_ri, I_flt_ri)
+
+    # Debugging
+    println("Initial OuterLoop states:")
+    println("δθ_olc0: $(outerloop_states[THETA_OLC])")
+    println("P_M: $(outerloop_states[P_M])")
+    println("Q_M: $(outerloop_states[Q_M])")
+
+    println("Initial OuterLoop algebraic variables:")
+    println("v_olc_ref0: $(v_olc_ref0)")
 
     # Stand-in for DC-side model. TODO: Replace with actual model (?) V_dc is only used for getting m_dq for PWM model
     V_dc = 1.0
@@ -164,8 +212,25 @@ function run_inverter_model(network_file)
     # Initialize Inner Loop states with lots of stuff
     innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
 
-    # Override outer loop's initial guess at the angle
+    println("Initial InnerLoop states:")
+    println("ξ_d: $(innerloop_states[XI_D_IDX])")
+    println("ξ_q: $(innerloop_states[XI_Q_IDX])")
+    println("γ_d: $(innerloop_states[GAMMA_D_IDX])")
+    println("γ_q: $(innerloop_states[GAMMA_Q_IDX])")
+    println("ϕ_d: $(innerloop_states[PHI_D_IDX])")
+    println("ϕ_q: $(innerloop_states[PHI_Q_IDX])")
+
+    println("InnerLoop Initialization Has Updated:")
+    println("δθ_olc: $(δθ_olc)")
+    println("v_olc_ref: $(v_olc_ref)")
+
+    println("InnerLoop Initialization Has Found:")
+    println("m0_d: $(m0_d)")
+    println("m0_q: $(m0_q)")
+
+    # Override outer loop's initial guess at the angle and reference voltage
     outerloop_states[THETA_OLC] = δθ_olc
+    set_V_ref(outerloop, v_olc_ref)
 
     # Combine all states
     states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states)
@@ -200,56 +265,6 @@ function run_inverter_model(network_file)
     mass_matrix = Diagonal(M_system)
     println("Mass matrix shape: $(size(mass_matrix))")
 
-    # Print initial states summary
-    println("Initial Line Currents:")
-    println("I_12_D: $(network_states[I_12_D_IDX])")
-    println("I_12_Q: $(network_states[I_12_Q_IDX])")
-
-    println("Initial Filter States:")
-    println("Id_inv: $(filter_states[ID_INV])")
-    println("Iq_inv: $(filter_states[IQ_INV])")
-    println("Vd_flt: $(filter_states[VD_FLT])")
-    println("Vq_flt: $(filter_states[VQ_FLT])")
-    println("Vr_flt: $(V_flt_ri[1])")
-    println("Vi_flt: $(V_flt_ri[2])")
-    println("Id_grd: $(filter_states[ID_GRD])")
-    println("Iq_grd: $(filter_states[IQ_GRD])")
-    println("Ir_flt: $(I_flt_ri[1])")
-    println("Ii_flt: $(I_flt_ri[2])")
-
-    println("Initial filter algebraic equations")
-    println("Vd_inv: $(Vd_inv)")
-    println("Vq_inv: $(Vq_inv)")
-
-    println("Initial PLL states:")
-    println("vq_pll: $(pll_states[VQ_PLL_IDX])")
-    println("epsilon_pll: $(pll_states[EPSILON_IDX])")
-    println("theta_pll: $(pll_states[THETA_IDX])")
-
-    println("Initial OuterLoop states:")
-    println("δθ_olc0: $(outerloop_states[THETA_OLC])")
-    println("P_M: $(outerloop_states[P_M])")
-    println("Q_M: $(outerloop_states[Q_M])")
-
-    println("Initial OuterLoop algebraic variables:")
-    println("v_olc_ref0: $(v_olc_ref0)")
-
-    println("Initial InnerLoop states:")
-    println("ξ_d: $(innerloop_states[XI_D_IDX])")
-    println("ξ_q: $(innerloop_states[XI_Q_IDX])")
-    println("γ_d: $(innerloop_states[GAMMA_D_IDX])")
-    println("γ_q: $(innerloop_states[GAMMA_Q_IDX])")
-    println("ϕ_d: $(innerloop_states[PHI_D_IDX])")
-    println("ϕ_q: $(innerloop_states[PHI_Q_IDX])")
-
-    println("InnerLoop Initialization Has Updated:")
-    println("δθ_olc: $(δθ_olc)")
-    println("v_olc_ref: $(v_olc_ref)")
-
-    println("InnerLoop Initialization Has Found:")
-    println("m0_d: $(m0_d)")
-    println("m0_q: $(m0_q)")
-
     # System dynamics function
     function inverter_dynamics!(du, u, params, t)
         # Extract states for each component
@@ -274,11 +289,13 @@ function run_inverter_model(network_file)
         du_innerloop = similar(innerloop_states_f64)
 
         # Extract terminal voltage and current from network at bus 2 (inverter bus)
+        # These are in the DQ of the network
         v_2_d = network_states_f64[V_2_D_IDX]
         v_2_q = network_states_f64[V_2_Q_IDX]
         v_grid = [v_2_d, v_2_q]
 
         # Unpack filter states
+        # These are in the DQ of the network
         i_inv_d = filter_states_f64[ID_INV]
         i_inv_q = filter_states_f64[IQ_INV]
         v_flt_d = filter_states_f64[VD_FLT]
@@ -314,7 +331,13 @@ function run_inverter_model(network_file)
             params.outerloop
         )
 
+        # # Debugging
+        # println("Inside update function:")
+        # println("v_olc_ref: $v_olc_ref")
+        # println("δθ_olc: $δθ_olc")
+
         # 3. Update Inner Loop states
+        # The refsignal values returned here are in the DQ of the converter
         v_d_refsignal, v_q_refsignal = update_innerloop_states!(
             innerloop_states_f64,
             du_innerloop,
@@ -333,16 +356,18 @@ function run_inverter_model(network_file)
         )
 
         # Prepare inverter voltage for filter update
-        # Convert to real,imaginary components to prepare for network transformation
-        v_inv_ri = (v_d_refsignal + im * v_q_refsignal) * exp(im * (δθ_olc + π / 2))
-        #Convert to network dq
-        v_inv = ri_dq(0) * [real(v_inv_ri); imag(v_inv_ri)]
+        # Convert to network DQ to pass to network
+        v_inv_dq_network = (v_d_refsignal + im * v_q_refsignal) * exp(im * (δθ_olc + π / 2))
+
+        # Pack into a vector for the filter
+        v_inv_dq_network = [real(v_inv_dq_network), imag(v_inv_dq_network)]
 
         # 4. Update filter states
+        # MESSAGE FROM PAST ROB AND MUHY: V_INV SHOULD BE USED BY THE FILTER IN THE FILTER DQ SRF
         update_filter_states!(
             filter_states_f64,
             du_filter,
-            v_inv,
+            v_inv_dq_network,
             v_grid,
             params.ωsys,
             params.filter
@@ -368,24 +393,24 @@ function run_inverter_model(network_file)
         du[params.outerloop_idx] = du_outerloop
         du[params.innerloop_idx] = du_innerloop
         # print du values for debugging
-        println("du_network: $du_network")
-        println("du_filter: $du_filter")
-        println("du_pll: $du_pll")
-        println("du_outerloop: $du_outerloop")
-        println("du_innerloop: $du_innerloop")
+        # println("du_network: $du_network")
+        # println("du_filter: $du_filter")
+        # println("du_pll: $du_pll")
+        # println("du_outerloop: $du_outerloop")
+        # println("du_innerloop: $du_innerloop")
         # Print debugging info at integer time steps
-        if abs(t - round(t)) < 0.00001
+        if abs(t - round(t)) < 0.01
             println("t=$t: P=$(real(S_terminal)), Q=$(imag(S_terminal)), θ_pll=$(θ_pll), δθ_olc=$(δθ_olc)")
         end
     end
 
     inverter_system = ODEFunction(inverter_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 10.0)
+    tspan = (0.0, 15.0)
     prob = ODEProblem(inverter_system, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [15.0]
+    perturb_times = [5.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -397,13 +422,13 @@ function run_inverter_model(network_file)
         # Choose one perturbation scenario
 
         # 1. Line Trip - uncommenting this will simulate a line trip
-        # integrator.p.network.R_12 = 1e6
-        # integrator.p.network.X_12 = 1e6
-        # integrator.p.network.B_1 *= 0.5
-        # integrator.p.network.B_2 *= 0.5
+        integrator.p.network.R_12 = 1e6
+        integrator.p.network.X_12 = 1e6
+        integrator.p.network.B_1 *= 0.5
+        integrator.p.network.B_2 *= 0.5
 
         # 2. Frequency change - uncommenting this will simulate a frequency change
-        integrator.p.ωsys = 1.02  # 2% frequency increase
+        #integrator.p.ωsys = 1.02  # 2% frequency increase
 
         # 3. Load change - uncommenting this will simulate a load change
         # integrator.p.network.Z_L *= 0.85  # 15% load increase
@@ -432,8 +457,8 @@ function run_inverter_model(network_file)
         # Terminal voltage and current
         v_2_d = network_states[V_2_D_IDX-p.network_idx[1]+1]
         v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
-        i_grd_d = filter_states[ID_GRD-p.filter_idx[1]+1]
-        i_grd_q = filter_states[IQ_GRD-p.filter_idx[1]+1]
+        i_grd_d = filter_states[ID_GRD]
+        i_grd_q = filter_states[IQ_GRD]
 
         # Calculate power
         P = v_2_d * i_grd_d + v_2_q * i_grd_q
@@ -446,8 +471,8 @@ function run_inverter_model(network_file)
         # Note: This is approximate as we don't store v_d_refsignal and v_q_refsignal directly
         # Using the states to reconstruct them would require re-running the inner loop update
         # Instead, we'll extract XI_D and XI_Q states as proxies
-        push!(v_inner_d_values, innerloop_states[XI_D_IDX-p.innerloop_idx[1]+1])
-        push!(v_inner_q_values, innerloop_states[XI_Q_IDX-p.innerloop_idx[1]+1])
+        push!(v_inner_d_values, innerloop_states[XI_D_IDX])
+        push!(v_inner_q_values, innerloop_states[XI_Q_IDX])
     end
 
     # Create plots

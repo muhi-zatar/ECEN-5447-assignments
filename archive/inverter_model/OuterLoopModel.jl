@@ -1,7 +1,7 @@
 module OuterLoopModel
 
 # Exporting the needed functions
-export OuterLoop, initialize_outerloop, update_outerloop_states!
+export OuterLoop, initialize_outerloop, update_outerloop_states!, set_V_ref
 
 # Outer Loop state indices
 const THETA_OLC = 1
@@ -41,6 +41,10 @@ mutable struct OuterLoop
     end
 end
 
+function set_V_ref(outerloop::OuterLoop, v_ref)
+    outerloop.v_ref = v_ref
+end
+
 # Initialize Outer Loop states
 function initialize_outerloop(outerloop::OuterLoop, V_filter_init::AbstractArray{Float64}, I_filter_init::AbstractArray{Float64})
     # This function initializes the outer loop controller states
@@ -62,7 +66,7 @@ function initialize_outerloop(outerloop::OuterLoop, V_filter_init::AbstractArray
     # Setting the reference values
     outerloop.P_ref = p_e
     outerloop.Q_ref = q_e
-    outerloop.v_ref = sqrt(vr_filter^2 + vi_filter^2)
+    outerloop.v_ref = 1.0   # Will be overridden by inner loop initialization
 
     # TODO: Check if these are correct:
     q_m = outerloop.Q_ref
