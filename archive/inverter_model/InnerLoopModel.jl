@@ -99,22 +99,22 @@ function initialize_innerloop(
 
         #----- Reference Frame Transformations -----#
         # Capacitor voltage from filter SRF to controller SRF
-        V_dq = (Vd_flt + im * Vq_flt) * exp(-im * (δθ_olc))# + π / 2))
+        V_dq = (Vd_flt + im * Vq_flt) * exp(-im * (δθ_olc + π / 2))
         v_d = real(V_dq)
         v_q = imag(V_dq)
 
         # Grid-side current from filter SRF to controller SRF
-        I_dq = (Id_grd + im * Iq_grd) * exp(-im * (δθ_olc))# + π / 2))
+        I_dq = (Id_grd + im * Iq_grd) * exp(-im * (δθ_olc + π / 2))
         i_d = real(I_dq)
         i_q = imag(I_dq)
 
         # Inverter-side current from filter SRF to controller SRF
-        I_dq_inv = (Id_inv + im * Iq_inv) * exp(-im * (δθ_olc))# + π / 2))
+        I_dq_inv = (Id_inv + im * Iq_inv) * exp(-im * (δθ_olc + π / 2))
         i_d_cv = real(I_dq_inv)
         i_q_cv = imag(I_dq_inv)
 
         # Inverter output voltage from filter SRF to controller SRF
-        V_dq_inv = (Vd_inv + im * Vq_inv) * exp(-im * (δθ_olc))# + π / 2))
+        V_dq_inv = (Vd_inv + im * Vq_inv) * exp(-im * (δθ_olc + π / 2))
         v_d_inv = real(V_dq_inv)
         v_q_inv = imag(V_dq_inv)
 
@@ -166,7 +166,7 @@ function initialize_innerloop(
         states[PHI_Q_IDX] = x0[8]
 
         # Converter modulation
-        m0_dq = (Vd_inv + im * Vq_inv) * exp(im * (δθ_olc)) / V_dc## + π / 2)) / V_dc
+        m0_dq = (Vd_inv + im * Vq_inv) * exp(im * (δθ_olc + π / 2)) / V_dc
         m0_d = real(m0_dq)
         m0_q = imag(m0_dq)
 
@@ -202,17 +202,17 @@ function update_innerloop_states!(
 
     #----- Reference Frame Transformations -----#
     # Capacitor voltage from filter SRF to controller SRF
-    V_dq = (Vd_flt + im * Vq_flt) * exp(-im * (δθ_olc))# + π / 2))
+    V_dq = (Vd_flt + im * Vq_flt) * exp(-im * (δθ_olc + π / 2))
     v_d = real(V_dq)
     v_q = imag(V_dq)
 
     # Grid-side current from filter SRF to controller SRF
-    I_dq = (Id_grd + im * Iq_grd) * exp(-im * (δθ_olc))# + π / 2))
+    I_dq = (Id_grd + im * Iq_grd) * exp(-im * (δθ_olc + π / 2))
     i_d = real(I_dq)
     i_q = imag(I_dq)
 
     # Inverter-side current from filter SRF to controller SRF
-    I_dq_inv = (Id_inv + im * Iq_inv) * exp(-im * (δθ_olc))# + π / 2))
+    I_dq_inv = (Id_inv + im * Iq_inv) * exp(-im * (δθ_olc + π / 2))
     i_d_cv = real(I_dq_inv)
     i_q_cv = imag(I_dq_inv)
 
