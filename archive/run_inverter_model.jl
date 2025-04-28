@@ -183,7 +183,7 @@ function run_inverter_model(network_file)
     V_dc = 1.0
 
     # Initialize Inner Loop states with lots of stuff
-    innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
+    innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, I_flt_ri[1], I_flt_ri[2], δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
     println("Inner Loop states:")
     println("ξ_d: $(innerloop_states[XI_D_IDX])")
     println("ξ_q: $(innerloop_states[XI_Q_IDX])")
@@ -191,9 +191,10 @@ function run_inverter_model(network_file)
     println("γ_q: $(innerloop_states[GAMMA_Q_IDX])")
     println("ϕ_d: $(innerloop_states[PHI_D_IDX])")
     println("ϕ_q: $(innerloop_states[PHI_Q_IDX])")
-    exit()
+    #exit()
     # Override outer loop's initial guess at the angle
     outerloop_states[THETA_OLC] = δθ_olc
+    println("θ_olc has been updated to: $(δθ_olc)")
 
     # Combine all states
     states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states)
@@ -306,6 +307,8 @@ function run_inverter_model(network_file)
         v_2_d = network_states_f64[V_2_D_IDX]
         v_2_q = network_states_f64[V_2_Q_IDX]
         v_grid = [v_2_d, v_2_q]
+        # Convert to RI for filter
+        v_grid_ri = dq_ri(0.0) * [v_2_d; v_2_q]
 
         # Unpack filter states
         i_inv_d = filter_states_f64[ID_INV]
@@ -316,10 +319,21 @@ function run_inverter_model(network_file)
         i_grd_q = filter_states_f64[IQ_GRD]
 
         # Convert filter capacitor voltage to rectangular coordinates for PLL
-        v_flt_ri = dq_ri(0.0) * [v_flt_d; v_flt_q]
+        #v_flt_ri = dq_ri(0.0) * [v_flt_d; v_flt_q]
+        v_flt_ri = [v_flt_d, v_flt_q]
 
         # Convert grid-side filter current to rectangular coordinates for OuterLoop
-        i_grd_ri = dq_ri(0.0) * [i_grd_d; i_grd_q]
+        #i_grd_ri = dq_ri(0.0) * [i_grd_d; i_grd_q]
+        i_grd_ri = [i_grd_d, i_grd_q]
+
+        # Unpack outer loop states
+        δθ_olc = outerloop_states_f64[THETA_OLC]
+        p_m = outerloop_states_f64[P_M]
+        q_m = outerloop_states_f64[Q_M]
+
+        # Reconstruct v_olc_ref and ω_olc from states for the inner loop
+        v_olc_ref = params.outerloop.v_ref + params.outerloop.Kpq * (params.outerloop.Q_ref - q_m)
+        ω_olc = params.outerloop.ω_ref + params.outerloop.Rp * (params.outerloop.P_ref - p_m)
 
         # 1. Update PLL states
         update_pll_states!(
@@ -333,17 +347,7 @@ function run_inverter_model(network_file)
         # Extract PLL angle
         θ_pll = pll_states_f64[THETA_IDX]
 
-        # 2. Update Outer Loop states
-        δθ_olc, v_olc_ref, ω_olc = update_outerloop_states!(
-            outerloop_states_f64,
-            du_outerloop,
-            v_flt_ri,
-            i_grd_ri,
-            params.ωsys,
-            params.outerloop
-        )
-
-        # 3. Update Inner Loop states
+        # 2. Update Inner Loop states
         v_d_refsignal, v_q_refsignal = update_innerloop_states!(
             innerloop_states_f64,
             du_innerloop,
@@ -361,26 +365,48 @@ function run_inverter_model(network_file)
             params.innerloop
         )
 
+        # 3. Update Outer Loop states
+        _, _, _ = update_outerloop_states!(
+            outerloop_states_f64,
+            du_outerloop,
+            v_flt_ri,
+            i_grd_ri,
+            params.ωsys,
+            params.outerloop
+        )
+
         # Prepare inverter voltage for filter update
+
+        println("δθ_olc = $(δθ_olc)")
+
         # Convert to real,imaginary components to prepare for network transformation
-        v_inv_ri = (v_d_refsignal + im * v_q_refsignal) * exp(im * (δθ_olc+ π / 2))
+        v_inv_ri = (v_d_refsignal + im * v_q_refsignal) * exp(im * (δθ_olc))# + π / 2))
         #Convert to network dq
-        v_inv = ri_dq(0) * [real(v_inv_ri); imag(v_inv_ri)]
+        #v_inv = ri_dq(0) * [real(v_inv_ri); imag(v_inv_ri)]
         v_inv_ri = [real(v_inv_ri); imag(v_inv_ri)]
         # v_grid_ri = dq_ri(0) * [v_2_d; v_2_q]
+        println("In main update function:")
+        println("Vd_inv = $(v_inv_ri[1])")
+        println("Vq_inv = $(v_inv_ri[2])")
+        println("Vd_grd = $(v_grid_ri[1])")
+        println("Vq_grd = $(v_grid_ri[2])")
+
         # 4. Update filter states
         update_filter_states!(
             filter_states_f64,
             du_filter,
             v_inv_ri,
-            v_grid,
+            v_grid_ri,
             params.ωsys,
             params.filter
         )
 
+        # Prepare grid-side filter current in network DQ
+        i_grd_dq = ri_dq(0.0) * [i_grd_ri[1]; i_grd_ri[2]]
+
         # Compute apparent power for the network
-        P_terminal = v_2_d * i_grd_d + v_2_q * i_grd_q
-        Q_terminal = v_2_q * i_grd_d - v_2_d * i_grd_q
+        P_terminal = v_2_d * i_grd_dq[1] + v_2_q * i_grd_dq[2]
+        Q_terminal = v_2_q * i_grd_dq[1] - v_2_d * i_grd_dq[2]
         S_terminal = complex(P_terminal, Q_terminal)
 
         # 5. Update network states
@@ -397,14 +423,13 @@ function run_inverter_model(network_file)
         du[params.pll_idx] = du_pll
         du[params.outerloop_idx] = du_outerloop
         du[params.innerloop_idx] = du_innerloop
-        # print du values for debugging
-        # if t > 9.8
-        #     println("du_network: $du_network")
-        #     println("du_filter: $du_filter")
-        #     println("du_pll: $du_pll")
-        #     println("du_outerloop: $du_outerloop")
-        #     println("du_innerloop: $du_innerloop")
-        # end
+        # print du values for debugging        
+        println("du_network: $du_network")
+        println("du_filter: $du_filter")
+        println("du_pll: $du_pll")
+        println("du_outerloop: $du_outerloop")
+        println("du_innerloop: $du_innerloop")
+        exit()
         # Print debugging info at integer time steps
         if abs(t - round(t)) < 0.00001
             println("t=$t: P=$(real(S_terminal)), Q=$(imag(S_terminal)), θ_pll=$(θ_pll), δθ_olc=$(δθ_olc)")
@@ -464,7 +489,7 @@ function run_inverter_model(network_file)
         # Terminal voltage and current
         v_2_d = network_states[V_2_D_IDX-p.network_idx[1]+1]
         v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
-        i_grd_d = filter_states[ID_GRD] 
+        i_grd_d = filter_states[ID_GRD]
         i_grd_q = filter_states[IQ_GRD]
 
         # Calculate power

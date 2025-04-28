@@ -111,6 +111,12 @@ function update_filter_states!(
     Vd_inv, Vq_inv = v_inv
     Vd_grd, Vi_grd = v_grid
 
+    println("In update:")
+    println("Vd_inv = $Vd_inv")
+    println("Vq_inv = $Vq_inv")
+    println("Vd_grd = $Vd_grd")
+    println("Vq_grd = $Vq_grd")
+
     # State equations for the filter
     # Inverter-side inductor current
     derivatives[ID_INV] = (flt.Ωb / flt.lf) * (Vd_inv - Vd_flt - flt.rf * Id_inv + ωg * flt.lf * Iq_inv)
