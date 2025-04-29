@@ -48,6 +48,9 @@ end
 # Initialize Outer Loop states
 function initialize_outerloop(outerloop::OuterLoop, V_filter_init::AbstractArray{Float64}, I_filter_init::AbstractArray{Float64})
     # This function initializes the outer loop controller states
+    # V_filter_init: Initial filter capacitor voltage vector [vr, vi] in rectangular reference frame
+    # I_filter_init: Inital grid-side filter current vector [ir, ii] in rectangular reference frame
+
     states = zeros(Float64, 3)
 
     vr_filter = V_filter_init[1]
@@ -68,7 +71,6 @@ function initialize_outerloop(outerloop::OuterLoop, V_filter_init::AbstractArray
     outerloop.Q_ref = q_e
     outerloop.v_ref = 1.0   # Will be overridden by inner loop initialization
 
-    # TODO: Check if these are correct:
     q_m = outerloop.Q_ref
     v_olc_ref = outerloop.v_ref
 
@@ -84,7 +86,6 @@ end
 function update_outerloop_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
-    # vdc::Float64,
     V_filter::AbstractArray{Float64},
     I_filter::AbstractArray{Float64},
     ω_sys::Float64,
@@ -101,13 +102,15 @@ function update_outerloop_states!(
     ir_filter = I_filter[1]
     ii_filter = I_filter[2]
 
-    # Calculating necessary parameters (TODO: extract 60.0 from base frequency (this is fine for now))
+    # Calculating necessary parameters
     Ωb = 2π * 60.0
     p_e = vr_filter * ir_filter + vi_filter * ii_filter
     q_e = vi_filter * ir_filter - vr_filter * ii_filter
+
+    # Active power droop
     ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
 
-    # Not sure why this is needed, as it is not used in other equations
+    # Reactive power droop
     v_olc_ref = outerloop.v_ref + outerloop.Kpq * (outerloop.Q_ref - q_m)
 
     # Calculating the derivatives as per the outer loop control equations in the documentation

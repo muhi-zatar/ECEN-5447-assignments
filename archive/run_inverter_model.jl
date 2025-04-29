@@ -155,18 +155,11 @@ function run_inverter_model(network_file)
     Vq_flt = filter_states[VQ_FLT]
     # NOTE: Id_grd, Iq_grd are filter states, but they've already been calculated by the network initialization
 
-    # TODO: Try both:
-    # 1) Convert back to RI for PLL and Outer Loop initialization
-    # 2) Keep in network DQ for PLL and Outer Loop initialization
-
     # Convert filter capacitor voltage to RI for PLL initialization
-    V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]  # Option 1: Convert DQ to RI
-    V_flt = [Vd_flt; Vq_flt]    # Option 2: Keep as network DQ
+    V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]
 
     # Convert grid-side current from the filter to RI for Outer Loop initialization
-    I_flt_ri = dq_ri(0.0) * [Id_grd; Iq_grd]  # Option 1: Convert DQ to RI
-    I_flt = [Id_grd; Iq_grd]    # Option 2: Keep as network DQ
-
+    I_flt_ri = dq_ri(0.0) * [Id_grd; Iq_grd]
 
     # Debugging
     println("Initial Filter States:")
@@ -206,11 +199,11 @@ function run_inverter_model(network_file)
     println("Initial OuterLoop algebraic variables:")
     println("v_olc_ref0: $(v_olc_ref0)")
 
-    # Stand-in for DC-side model. TODO: Replace with actual model (?) V_dc is only used for getting m_dq for PWM model
+    # Stand-in for DC-side model.
     V_dc = 1.0
 
     # Initialize Inner Loop states with lots of stuff
-    innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, v_olc_ref0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
+    innerloop_states, δθ_olc, v_olc_ref, m0_d, m0_q = initialize_innerloop(innerloop, Id_inv, Iq_inv, Vd_flt, Vq_flt, Id_grd, Iq_grd, δθ_olc0, 1.0, V_dc, Vd_inv, Vq_inv, filter.cf, filter.lf)
 
     println("Initial InnerLoop states:")
     println("ξ_d: $(innerloop_states[XI_D_IDX])")
@@ -331,11 +324,6 @@ function run_inverter_model(network_file)
             params.outerloop
         )
 
-        # # Debugging
-        # println("Inside update function:")
-        # println("v_olc_ref: $v_olc_ref")
-        # println("δθ_olc: $δθ_olc")
-
         # 3. Update Inner Loop states
         # The refsignal values returned here are in the DQ of the converter
         v_d_refsignal, v_q_refsignal = update_innerloop_states!(
@@ -356,14 +344,13 @@ function run_inverter_model(network_file)
         )
 
         # Prepare inverter voltage for filter update
-        # Convert to network DQ to pass to network
+        # Convert to network DQ to pass to network/filter
         v_inv_dq_network = (v_d_refsignal + im * v_q_refsignal) * exp(im * (δθ_olc + π / 2))
 
         # Pack into a vector for the filter
         v_inv_dq_network = [real(v_inv_dq_network), imag(v_inv_dq_network)]
 
         # 4. Update filter states
-        # MESSAGE FROM PAST ROB AND MUHY: V_INV SHOULD BE USED BY THE FILTER IN THE FILTER DQ SRF
         update_filter_states!(
             filter_states_f64,
             du_filter,
@@ -392,12 +379,6 @@ function run_inverter_model(network_file)
         du[params.pll_idx] = du_pll
         du[params.outerloop_idx] = du_outerloop
         du[params.innerloop_idx] = du_innerloop
-        # print du values for debugging
-        # println("du_network: $du_network")
-        # println("du_filter: $du_filter")
-        # println("du_pll: $du_pll")
-        # println("du_outerloop: $du_outerloop")
-        # println("du_innerloop: $du_innerloop")
         # Print debugging info at integer time steps
         if abs(t - round(t)) < 0.01
             println("t=$t: P=$(real(S_terminal)), Q=$(imag(S_terminal)), θ_pll=$(θ_pll), δθ_olc=$(δθ_olc)")
@@ -422,16 +403,16 @@ function run_inverter_model(network_file)
         # Choose one perturbation scenario
 
         # 1. Line Trip - uncommenting this will simulate a line trip
-        # integrator.p.network.R_12 = 1e6
-        # integrator.p.network.X_12 = 1e6
-        # integrator.p.network.B_1 *= 0.5
-        # integrator.p.network.B_2 *= 0.5
+        integrator.p.network.R_12 = 1e6
+        integrator.p.network.X_12 = 1e6
+        integrator.p.network.B_1 *= 0.5
+        integrator.p.network.B_2 *= 0.5
 
         # 2. Frequency change - uncommenting this will simulate a frequency change
         #integrator.p.ωsys = 1.02  # 2% frequency increase
 
         # 3. Load change - uncommenting this will simulate a load change
-        integrator.p.network.Z_L *= 1.15  # 15% load increase
+        #integrator.p.network.Z_L *= 1.15  # 15% load increase
     end
 
     # Create a Callback function that represents the perturbation
@@ -505,7 +486,7 @@ function run_inverter_model(network_file)
 
     # Combine plots
     p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1200, 1800), left_margin=10mm)
-    savefig(p_combined, "inverter_simulation_results_115.png")
+    savefig(p_combined, "inverter_simulation_results.png")
 
     return sol
 end

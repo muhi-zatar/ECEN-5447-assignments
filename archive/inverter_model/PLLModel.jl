@@ -49,25 +49,18 @@ end
 # Initialize PLL states
 function initialize_pll(pll::PLL, v_init::Vector{Float64})
     # This function initializes the PLL states
-    # v_init: Initial voltage vector [vr, vi] in grid reference frame
-    # theta_init: Initial phase angle (optional - if not provided, calculated from v_init)
+    # v_init: Initial filter capacitor voltage vector [vr, vi] in rectangular reference frame
 
     states = zeros(Float64, 3)
 
-    # Extract grid voltage components (will be filter when intergrated)
-    vr = v_init[1] # Real part of grid voltage
-    vi = v_init[2] # Imaginary part of grid voltage
+    # Extract voltage components
+    vr = v_init[1] # Real part of filter capacitor voltage
+    vi = v_init[2] # Imaginary part of filter capacitor voltage
 
-    # θ_init = atan(vi, vr) # Using atan2 equivalent for correct quadrant
-
-    # println("Initial PLL angle (θ_init): $θ_init")
-    # # # Calculate initial vq,out using equation (2f)
-    # # # vd,out + j·vq,out = (vr + j·vi)·e^(-j·θpll)
-    # # No need convert anything here, since from class we are initializing these by zeros.
-    # # V_dq_pll = ri_dq(θ_init + pi / 2) * [vr; vi]
-    # # vq_out = imag(V_dq_pll)
+    # Calculate initial angle
     θ_pll = atan(vi, vr)
-    # println("Initial PLL angle (θ0_pll): $θ_pll")
+
+    # Other states are 0 at steady-state
     Vpll_q = 0.0
     ϵ_pll = 0.0
 
@@ -82,7 +75,7 @@ end
 function update_pll_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
-    v_out_ri::Vector{Float64},  # Converter output voltage [vr, vi] in grid/filter reference frame
+    v_flt_ri::Vector{Float64},  # Filter capacitor voltage [vr, vi] in rectangular reference frame
     ωsys::Float64,            # System frequency in pu
     pll::PLL
 )
@@ -92,8 +85,8 @@ function update_pll_states!(
     θ_pll = states[THETA_IDX]     # θpll
 
     # Extract converter output voltage components
-    vr = v_out_ri[1] # Real part of converter output voltage
-    vi = v_out_ri[2] # Imaginary part of converter output voltage
+    vr = v_flt_ri[1] # Real part of filter capacitor voltage
+    vi = v_flt_ri[2] # Imaginary part of filter capacitor voltage
 
     # Calculate vd,out and vq,out using equation (2f)
     complex_v = (vr + im * vi) * exp(-im * θ_pll)

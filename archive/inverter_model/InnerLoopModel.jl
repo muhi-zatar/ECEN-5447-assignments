@@ -85,7 +85,6 @@ function initialize_innerloop(
     Iq_grd::Float64,            # Grid-side filter inductor current (in the filter/network SRF)
     δθ_olc0::Float64,           # Outer-loop controller reference angle (initial guess)
     ω_olc0::Float64,            # Outer-loop controller frequency (initial guess)
-    v_olc_ref0,                 # Outer-loop controller reference voltage (initial guess)
     V_dc::Float64,              # DC-link capacitor voltage
     Vd_inv::Float64,            # Inverter output voltage (from filter initialization)
     Vq_inv::Float64,            # Inverter output voltage (from filter initialization)
