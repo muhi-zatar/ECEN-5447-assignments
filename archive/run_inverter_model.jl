@@ -422,16 +422,16 @@ function run_inverter_model(network_file)
         # Choose one perturbation scenario
 
         # 1. Line Trip - uncommenting this will simulate a line trip
-        integrator.p.network.R_12 = 1e6
-        integrator.p.network.X_12 = 1e6
-        integrator.p.network.B_1 *= 0.5
-        integrator.p.network.B_2 *= 0.5
+        # integrator.p.network.R_12 = 1e6
+        # integrator.p.network.X_12 = 1e6
+        # integrator.p.network.B_1 *= 0.5
+        # integrator.p.network.B_2 *= 0.5
 
         # 2. Frequency change - uncommenting this will simulate a frequency change
         #integrator.p.ωsys = 1.02  # 2% frequency increase
 
         # 3. Load change - uncommenting this will simulate a load change
-        # integrator.p.network.Z_L *= 0.85  # 15% load increase
+        integrator.p.network.Z_L *= 1.15  # 15% load increase
     end
 
     # Create a Callback function that represents the perturbation
@@ -447,7 +447,7 @@ function run_inverter_model(network_file)
     Q_values = Float64[]
     v_inner_d_values = Float64[]
     v_inner_q_values = Float64[]
-
+    voltage_magnitude_values = Float64[]
     for i in 1:length(t)
         # Get current state values
         network_states = sol[p.network_idx, i]
@@ -459,7 +459,7 @@ function run_inverter_model(network_file)
         v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
         i_grd_d = filter_states[ID_GRD]
         i_grd_q = filter_states[IQ_GRD]
-
+        voltage_magnitude = sqrt(v_2_d^2 + v_2_q^2)
         # Calculate power
         P = v_2_d * i_grd_d + v_2_q * i_grd_q
         Q = v_2_q * i_grd_d - v_2_d * i_grd_q
@@ -471,6 +471,7 @@ function run_inverter_model(network_file)
         # Note: This is approximate as we don't store v_d_refsignal and v_q_refsignal directly
         # Using the states to reconstruct them would require re-running the inner loop update
         # Instead, we'll extract XI_D and XI_Q states as proxies
+        push!(voltage_magnitude_values, voltage_magnitude)
         push!(v_inner_d_values, innerloop_states[XI_D_IDX])
         push!(v_inner_q_values, innerloop_states[XI_Q_IDX])
     end
@@ -490,23 +491,21 @@ function run_inverter_model(network_file)
     plot!(p3, t, v_inner_q_values,
         label="v_q", linewidth=2)
 
-    # Outer Control Angle
-    p4 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] for i in 1:length(t)],
-        label="δθ_olc", title="Outer Control Angle", linewidth=2)
+    # Outer Control Angle in degrees
+    p4 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
+        label="δθ_olc", title="Outer Control Angle (Degrees)", linewidth=2)
 
-    # PLL Angle
-    p5 = plot(t, [sol[p.pll_idx[THETA_IDX], i] for i in 1:length(t)],
-        label="θ_pll", title="PLL Angle", linewidth=2)
+    # PLL Angle in degrees
+    p5 = plot(t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
+        label="θ_pll", title="PLL Angle (Degrees)", linewidth=2)
 
-    # Network Voltages
-    p6 = plot(t, [sol[p.network_idx[V_2_D_IDX], i] for i in 1:length(t)],
-        label="Vd", title="Bus 2 Voltage", linewidth=2)
-    plot!(p6, t, [sol[p.network_idx[V_2_Q_IDX], i] for i in 1:length(t)],
-        label="Vq", linewidth=2)
+    # Plot Voltage Magnitude
+    p6 = plot(t, voltage_magnitude_values,
+        label="|V|", title="Voltage Magnitude", linewidth=2)
 
     # Combine plots
     p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1200, 1800), left_margin=10mm)
-    savefig(p_combined, "inverter_simulation_results.png")
+    savefig(p_combined, "inverter_simulation_results_115.png")
 
     return sol
 end
