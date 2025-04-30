@@ -1,6 +1,6 @@
 cd(@__DIR__)
 using Pkg
-Pkg.activate("../.")
+Pkg.activate(".")
 #Pkg.resolve() # make sure Manifest matches Project
 #Pkg.instantiate() # install missing dependencies
 
