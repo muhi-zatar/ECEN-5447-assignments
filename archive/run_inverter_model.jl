@@ -258,8 +258,14 @@ function run_inverter_model(network_file)
     mass_matrix = Diagonal(M_system)
     println("Mass matrix shape: $(size(mass_matrix))")
 
+    # Define a times vector for the simulation for Logging
+    global times = Float64[]
+
     # System dynamics function
     function inverter_dynamics!(du, u, params, t)
+        # Log time for debugging
+        push!(times, t)
+
         # Extract states for each component
         network_states = u[params.network_idx]
         filter_states = u[params.filter_idx]
@@ -380,18 +386,18 @@ function run_inverter_model(network_file)
         du[params.outerloop_idx] = du_outerloop
         du[params.innerloop_idx] = du_innerloop
         # Print debugging info at integer time steps
-        if abs(t - round(t)) < 0.01
-            println("t=$t: P=$(real(S_terminal)), Q=$(imag(S_terminal)), θ_pll=$(θ_pll), δθ_olc=$(δθ_olc)")
-        end
+        # if abs(t - round(t)) < 0.00001
+        #     println("t=$t: P=$(real(S_terminal)), Q=$(imag(S_terminal)), θ_pll=$(θ_pll), δθ_olc=$(δθ_olc)")
+        # end
     end
 
     inverter_system = ODEFunction(inverter_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 15.0)
+    tspan = (0.0, 5.0)
     prob = ODEProblem(inverter_system, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [5.0]
+    perturb_times = [1.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -403,91 +409,169 @@ function run_inverter_model(network_file)
         # Choose one perturbation scenario
 
         # 1. Line Trip - uncommenting this will simulate a line trip
-        integrator.p.network.R_12 = 1e6
-        integrator.p.network.X_12 = 1e6
-        integrator.p.network.B_1 *= 0.5
-        integrator.p.network.B_2 *= 0.5
+        # integrator.p.network.R_12 = 1e6
+        # integrator.p.network.X_12 = 1e6
+        # integrator.p.network.B_1 *= 0.5
+        # integrator.p.network.B_2 *= 0.5
 
         # 2. Frequency change - uncommenting this will simulate a frequency change
-        #integrator.p.ωsys = 1.02  # 2% frequency increase
+        # integrator.p.ωsys = 1.02  # 2% frequency increase
 
-        # 3. Load change - uncommenting this will simulate a load change
-        #integrator.p.network.Z_L *= 1.15  # 15% load increase
+        # 3. Load increase - uncommenting this will simulate a load increase
+        # integrator.p.network.Z_L *= 0.85  # 15% load increase
+
+        # 4. Load decrease - uncommenting this will simulate a load decrease
+        integrator.p.network.Z_L *= 1.15
     end
 
     # Create a Callback function that represents the perturbation
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Rodas5(autodiff=false), dt=0.001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5(autodiff=false), dt=0.0001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
 
     t = sol.t
 
-    # Create derived quantities for plotting
-    P_values = Float64[]
-    Q_values = Float64[]
-    v_inner_d_values = Float64[]
-    v_inner_q_values = Float64[]
-    voltage_magnitude_values = Float64[]
+    # Allocate vectors for plotting
+    line_12_current_values_r = Float64[]
+    line_13_current_values_r = Float64[]
+    line_23_current_values_r = Float64[]
+    line_12_current_values_q = Float64[]
+    line_13_current_values_q = Float64[]
+    line_23_current_values_q = Float64[]
+    voltage_magnitude_values_1 = Float64[]
+    voltage_magnitude_values_2 = Float64[]
+    voltage_magnitude_values_3 = Float64[]
+    bus_1_p = Float64[]
+    bus_2_p = Float64[]
+    bus_3_p = Float64[]
+    bus_1_q = Float64[]
+    bus_2_q = Float64[]
+    bus_3_q = Float64[]
+
+    # Add values to plotting vectors
     for i in 1:length(t)
         # Get current state values
         network_states = sol[p.network_idx, i]
         filter_states = sol[p.filter_idx, i]
         innerloop_states = sol[p.innerloop_idx, i]
 
+        # Line current
+        I_12_d = network_states[I_12_D_IDX-p.network_idx[1]+1]
+        I_12_q = network_states[I_12_Q_IDX-p.network_idx[1]+1]
+        I_13_d = network_states[I_13_D_IDX-p.network_idx[1]+1]
+        I_13_q = network_states[I_13_Q_IDX-p.network_idx[1]+1]
+        I_23_d = network_states[I_23_D_IDX-p.network_idx[1]+1]
+        I_23_q = network_states[I_23_Q_IDX-p.network_idx[1]+1]
+
         # Terminal voltage and current
+        v_1_d = network_states[V_1_D_IDX-p.network_idx[1]+1]
+        v_1_q = network_states[V_1_Q_IDX-p.network_idx[1]+1]
+        v_3_d = network_states[V_3_D_IDX-p.network_idx[1]+1]
+        v_3_q = network_states[V_3_Q_IDX-p.network_idx[1]+1]
         v_2_d = network_states[V_2_D_IDX-p.network_idx[1]+1]
         v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
         i_grd_d = filter_states[ID_GRD]
         i_grd_q = filter_states[IQ_GRD]
-        voltage_magnitude = sqrt(v_2_d^2 + v_2_q^2)
+        I_1_d = network_states[I_1_D_IDX-p.network_idx[1]+1]
+        I_1_q = network_states[I_1_Q_IDX-p.network_idx[1]+1]
+        I_3_d = network_states[I_3_D_IDX-p.network_idx[1]+1]
+        I_3_q = network_states[I_3_Q_IDX-p.network_idx[1]+1]
+
+        # Convert line current to rectangular coordinates
+        I_12_ri = dq_ri(0.0) * [I_12_d; I_12_q]
+        I_13_ri = dq_ri(0.0) * [I_13_d; I_13_q]
+        I_23_ri = dq_ri(0.0) * [I_23_d; I_23_q]
+
+        # Calculate voltage magnitude
+        voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
+        voltage_magnitude_1 = sqrt(v_1_d^2 + v_1_q^2)
+        voltage_magnitude_3 = sqrt(v_3_d^2 + v_3_q^2)
+
         # Calculate power
-        P = v_2_d * i_grd_d + v_2_q * i_grd_q
-        Q = v_2_q * i_grd_d - v_2_d * i_grd_q
+        P_1 = v_1_d * I_1_d + v_1_q * I_1_q
+        Q_1 = v_1_q * I_1_d - v_1_d * I_1_q
+        P_2 = v_2_d * i_grd_d + v_2_q * i_grd_q
+        Q_2 = v_2_q * i_grd_d - v_2_d * i_grd_q
+        P_3 = v_3_d * I_3_d + v_3_q * I_3_q
+        Q_3 = v_3_q * I_3_d - v_3_d * I_3_q
 
-        push!(P_values, P)
-        push!(Q_values, Q)
-
-        # Extract inner loop reference signals
-        # Note: This is approximate as we don't store v_d_refsignal and v_q_refsignal directly
-        # Using the states to reconstruct them would require re-running the inner loop update
-        # Instead, we'll extract XI_D and XI_Q states as proxies
-        push!(voltage_magnitude_values, voltage_magnitude)
-        push!(v_inner_d_values, innerloop_states[XI_D_IDX])
-        push!(v_inner_q_values, innerloop_states[XI_Q_IDX])
+        # Push values to plotting vectors
+        push!(line_12_current_values_r, I_12_ri[1])
+        push!(line_13_current_values_r, I_13_ri[1])
+        push!(line_23_current_values_r, I_23_ri[1])
+        push!(line_12_current_values_q, I_12_ri[2])
+        push!(line_13_current_values_q, I_13_ri[2])
+        push!(line_23_current_values_q, I_23_ri[2])
+        push!(voltage_magnitude_values_1, voltage_magnitude_1)
+        push!(voltage_magnitude_values_2, voltage_magnitude_2)
+        push!(voltage_magnitude_values_3, voltage_magnitude_3)
+        push!(bus_1_p, P_1)
+        push!(bus_2_p, P_2)
+        push!(bus_3_p, P_3)
+        push!(bus_1_q, Q_1)
+        push!(bus_2_q, Q_2)
+        push!(bus_3_q, Q_3)
     end
 
     # Create plots
     # Power
-    p1 = plot(t, P_values,
-        label="P", title="Active Power", linewidth=2)
+    p1 = plot(t, bus_1_p,
+        label="Inf. Bus", title="Active Power", linewidth=2)
+    plot!(p1, t, bus_2_p, label="Converter", linewidth=2)
+    plot!(p1, t, bus_3_p, label="Load", linewidth=2)
 
     # Reactive Power
-    p2 = plot(t, Q_values,
+    p2 = plot(t, bus_1_q,
         label="Q", title="Reactive Power", linewidth=2)
-
-    # Inner Control Voltage
-    p3 = plot(t, v_inner_d_values,
-        label="v_d", title="Inner Control Voltage", linewidth=2)
-    plot!(p3, t, v_inner_q_values,
-        label="v_q", linewidth=2)
+    plot!(p2, t, bus_2_q, label="Converter", linewidth=2)
+    plot!(p2, t, bus_3_q, label="Load", linewidth=2)
 
     # Outer Control Angle in degrees
-    p4 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
-        label="δθ_olc", title="Outer Control Angle (Degrees)", linewidth=2)
+    p3 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
+        label="δθ_olc", title="Angle (Degrees)", linewidth=2)
 
     # PLL Angle in degrees
-    p5 = plot(t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
-        label="θ_pll", title="PLL Angle (Degrees)", linewidth=2)
+    plot!(p3, t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
+        label="θ_pll", linewidth=2)
 
     # Plot Voltage Magnitude
-    p6 = plot(t, voltage_magnitude_values,
-        label="|V|", title="Voltage Magnitude", linewidth=2)
+    p4 = plot(t, voltage_magnitude_values_1,
+        label="Inf. Bus", title="Voltage Magnitude", linewidth=2)
+    plot!(p4, t, voltage_magnitude_values_2, label="Converter", linewidth=2)
+    plot!(p4, t, voltage_magnitude_values_3, label="Load", linewidth=2)
 
     # Combine plots
-    p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1200, 1800), left_margin=10mm)
+    p_combined = plot(p1, p2, p3, p4, layout=(2, 2), size=(1200, 1800), left_margin=10mm)
     savefig(p_combined, "inverter_simulation_results.png")
 
+    # Logging the states and writing to CSV
+    # Open a CSV file for writing
+    open("inverter_simulation_results_load_115.csv", "w") do io
+        # Write the header
+        write(io, "Time,P_1,Q_1,P_2,Q_2,P_3,Q_3,theta_pll,theta_olc,voltage_magnitude_1,voltage_magnitude_2,voltage_magnitude_3,I_12_r,I_12_i,I_13_r,I_13_i,I_23_r,I_23_i\n")
+        # Write the data
+        for i in 1:length(t)
+            write(io, "$(t[i]),")
+            write(io, "$(bus_1_p[i]),")
+            write(io, "$(bus_1_q[i]),")
+            write(io, "$(bus_2_p[i]),")
+            write(io, "$(bus_2_q[i]),")
+            write(io, "$(bus_3_p[i]),")
+            write(io, "$(bus_3_q[i]),")
+            write(io, "$(sol[p.pll_idx[THETA_IDX], i] * 180.0 / π),")
+            write(io, "$(sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π),")
+            write(io, "$(voltage_magnitude_values_1[i]),")
+            write(io, "$(voltage_magnitude_values_2[i]),")
+            write(io, "$(voltage_magnitude_values_3[i]),")
+            write(io, "$(line_12_current_values_r[i]),")
+            write(io, "$(line_12_current_values_q[i]),")
+            write(io, "$(line_13_current_values_r[i]),")
+            write(io, "$(line_13_current_values_q[i]),")
+            write(io, "$(line_23_current_values_r[i]),")
+            write(io, "$(line_23_current_values_q[i])\n")
+        end
+    end
     return sol
 end
 
