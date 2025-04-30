@@ -68,7 +68,7 @@ function initialize_filter(flt::Filter, v_term::Vector{Float64}, i_term::Vector{
 
     # Start with the 5th and 6th differential equations
     Vd_flt = Vd_grd + flt.rg * Id_grd - ωg * flt.lg * Iq_grd
-    Vq_flt = Vd_grd + flt.rg * Id_grd - ωg * flt.lg * Iq_grd
+    Vq_flt = Vq_grd + flt.rg * Iq_grd + ωg * flt.lg * Id_grd
 
     # Then use the 3rd and 4th differential equations
     Id_inv = Id_grd - ωg * flt.cf * Vq_flt

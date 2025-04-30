@@ -37,10 +37,10 @@ mutable struct PLL
 
     # Constructor with default values
     function PLL(;
-        ωlp=1.322*π*50,
+        ωlp=1.322 * π * 50,
         kppll=2.0,
         kipll=20.0,
-        Ωb=2π*60
+        Ωb=2π * 60
     )
         return new(ωlp, kppll, kipll, Ωb)
     end
@@ -49,26 +49,18 @@ end
 # Initialize PLL states
 function initialize_pll(pll::PLL, v_init::Vector{Float64})
     # This function initializes the PLL states
-    # v_init: Initial voltage vector [vr, vi] in grid reference frame
-    # theta_init: Initial phase angle (optional - if not provided, calculated from v_init)
-    
+    # v_init: Initial filter capacitor voltage vector [vr, vi] in rectangular reference frame
+
     states = zeros(Float64, 3)
-    
-    # Extract grid voltage components (will be filter when intergrated)
-    vr, vi = v_init
-    # vr = v_init[1] # Real part of grid voltage
-    # vi = v_init[2] # Imaginary part of grid voltage
 
-    # θ_init = atan(vi, vr) # Using atan2 equivalent for correct quadrant
+    # Extract voltage components
+    vr = v_init[1] # Real part of filter capacitor voltage
+    vi = v_init[2] # Imaginary part of filter capacitor voltage
 
-    # println("Initial PLL angle (θ_init): $θ_init")
-    # # # Calculate initial vq,out using equation (2f)
-    # # # vd,out + j·vq,out = (vr + j·vi)·e^(-j·θpll)
-    # # No need convert anything here, since from class we are initializing these by zeros.
-    # # V_dq_pll = ri_dq(θ_init + pi / 2) * [vr; vi]
-    # # vq_out = imag(V_dq_pll)
+    # Calculate initial angle
     θ_pll = atan(vi, vr)
-    # println("Initial PLL angle (θ0_pll): $θ_pll")
+
+    # Other states are 0 at steady-state
     Vpll_q = 0.0
     ϵ_pll = 0.0
 
@@ -83,7 +75,7 @@ end
 function update_pll_states!(
     states::AbstractVector{Float64},
     derivatives::AbstractVector{Float64},
-    v_grid::Vector{Float64},  # Grid voltage [vr, vi] in grid reference frame
+    v_flt_ri::Vector{Float64},  # Filter capacitor voltage [vr, vi] in rectangular reference frame
     ωsys::Float64,            # System frequency in pu
     pll::PLL
 )
@@ -91,51 +83,37 @@ function update_pll_states!(
     vq_pll = states[VQ_PLL_IDX]     # vq,pll
     ϵ_pll = states[EPSILON_IDX] # εpll
     θ_pll = states[THETA_IDX]     # θpll
-    
-    # Extract grid voltage components (could be filer when integrated)
-    vr = v_grid[1] # Real part of grid voltage
-    vi = v_grid[2] # Imaginary part of grid voltage
-    
+
+    # Extract converter output voltage components
+    vr = v_flt_ri[1] # Real part of filter capacitor voltage
+    vi = v_flt_ri[2] # Imaginary part of filter capacitor voltage
+
     # Calculate vd,out and vq,out using equation (2f)
-    # vd,out + j·vq,out = (vr + j·vi)·e^(-j·θpll)
-    # If this does not work, try ri_dq function
-    complex_v = (vr + im*vi) * exp(-im * θ_pll)
+    complex_v = (vr + im * vi) * exp(-im * θ_pll)
     vd_out = real(complex_v) # Not needed here
     vq_out = imag(complex_v)
-    # V_dq_pll = ri_dq(θ_pll + pi / 2) * [vr; vi]
-    # vq_out = V_dq_pll[2] # Extracting vq,out from the DQ voltage
 
-    # Debugging
-    # println("Vq_out = $(vq_out)")
-    # vd_out = real(V_dq_pll) # Not needed here
-    # println("Vd_out = $(vd_out)")
-    #println("Complex V = $(complex_v)")
-    # println("vq_out = $(vq_out)")
-    # println("vq_pll = $(vq_pll)")
-    # exit(0)
     # Equation (2a): v̇q,pll = ωlp[vq,out - vq,pll]
     dvq_pll_dt = pll.ωlp * (vq_out - vq_pll)
-    # ωsys = 1.0
-    # println("dvq_pll_dt = $(dvq_pll_dt)")
+
     # Equation (2b): ε̇pll = vq,pll
     dϵ_pll_dt = vq_pll
-    
+
     # Equation (2d): δωpll = 1.0 - ωsys + kp,pll·vq,pll + ki,pll·εpll
     δ_ω_pll = 1.0 - ωsys + pll.kppll * vq_pll + pll.kipll * ϵ_pll
-    # println("δωpll = $(δ_ω_pll)")
-    # exit(0)
+
     # Equation (2e): ωpll = δωpll + ωsys
     ω_pll = δ_ω_pll + ωsys
-    
+
     # Equation (2c): θ̇pll = Ωb·δωpll
     dθ_pll_dt = pll.Ωb * δ_ω_pll
-    
+
     # Update derivatives
     derivatives[VQ_PLL_IDX] = dvq_pll_dt
     derivatives[EPSILON_IDX] = dϵ_pll_dt
     derivatives[THETA_IDX] = dθ_pll_dt
-    
-    return 
+
+    return
 end
 
 end # PLLModel module
