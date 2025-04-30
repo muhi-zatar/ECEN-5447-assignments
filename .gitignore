@@ -27,3 +27,6 @@ Manifest.toml
 *.DS_Store
 results*/
 logs/
+
+# Python package management
+venv/
