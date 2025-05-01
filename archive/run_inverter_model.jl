@@ -258,14 +258,8 @@ function run_inverter_model(network_file)
     mass_matrix = Diagonal(M_system)
     println("Mass matrix shape: $(size(mass_matrix))")
 
-    # Define a times vector for the simulation for Logging
-    global times = Float64[]
-
     # System dynamics function
     function inverter_dynamics!(du, u, params, t)
-        # Log time for debugging
-        push!(times, t)
-
         # Extract states for each component
         network_states = u[params.network_idx]
         filter_states = u[params.filter_idx]
@@ -428,7 +422,7 @@ function run_inverter_model(network_file)
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
-    sol = solve(prob, Rodas5(autodiff=false), dt=0.0001, adaptive=false, saveat=0.01, callback=cb, tstops=perturb_times)
+    sol = solve(prob, Rodas5(autodiff=false), dt=0.0001, adaptive=false, saveat=0.0001, callback=cb, tstops=perturb_times)
 
     t = sol.t
 
@@ -448,6 +442,8 @@ function run_inverter_model(network_file)
     bus_1_q = Float64[]
     bus_2_q = Float64[]
     bus_3_q = Float64[]
+    ω_olc_values = Float64[]
+    ω_pll_values = Float64[]
 
     # Add values to plotting vectors
     for i in 1:length(t)
@@ -455,6 +451,8 @@ function run_inverter_model(network_file)
         network_states = sol[p.network_idx, i]
         filter_states = sol[p.filter_idx, i]
         innerloop_states = sol[p.innerloop_idx, i]
+        outerloop_states = sol[p.outerloop_idx, i]
+        pll_states = sol[p.pll_idx, i]
 
         # Line current
         I_12_d = network_states[I_12_D_IDX-p.network_idx[1]+1]
@@ -477,6 +475,17 @@ function run_inverter_model(network_file)
         I_1_q = network_states[I_1_Q_IDX-p.network_idx[1]+1]
         I_3_d = network_states[I_3_D_IDX-p.network_idx[1]+1]
         I_3_q = network_states[I_3_Q_IDX-p.network_idx[1]+1]
+
+        # Outer loop states
+        p_m = outerloop_states[P_M]
+        ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
+
+        # PLL states
+        ωsys = 1.0
+        vq_pll = pll_states[VQ_PLL_IDX]
+        ϵ_pll = pll_states[EPSILON_IDX]
+        δ_ω_pll = 1.0 - ωsys + pll.kppll * vq_pll + pll.kipll * ϵ_pll
+        ω_pll = δ_ω_pll + ωsys
 
         # Convert line current to rectangular coordinates
         I_12_ri = dq_ri(0.0) * [I_12_d; I_12_q]
@@ -512,6 +521,8 @@ function run_inverter_model(network_file)
         push!(bus_1_q, Q_1)
         push!(bus_2_q, Q_2)
         push!(bus_3_q, Q_3)
+        push!(ω_olc_values, ω_olc)
+        push!(ω_pll_values, ω_pll)
     end
 
     # Create plots
@@ -541,15 +552,24 @@ function run_inverter_model(network_file)
     plot!(p4, t, voltage_magnitude_values_2, label="Converter", linewidth=2)
     plot!(p4, t, voltage_magnitude_values_3, label="Load", linewidth=2)
 
+    p5 = plot(t, ω_pll_values .* 60.0, label="PLL", linewidth=2, title="Frequency")
+    plot!(p5, t, ω_olc_values .* 60.0, label="OLC", linewidth=2)
+
+    p6 = plot(t, [sol[p.filter_idx[VD_FLT], i] for i in 1:length(t)], label="Vd (flt)", linewidth=2, title="PLL Angle Investigation")
+    plot!(p6, t, [sol[p.filter_idx[VQ_FLT], i] for i in 1:length(t)], label="Vq (flt)", linewidth=2)
+    plot!(p6, t, [sol[p.filter_idx[ID_GRD], i] for i in 1:length(t)], label="Id (grd)", linewidth=2)
+    plot!(p6, t, [sol[p.filter_idx[IQ_GRD], i] for i in 1:length(t)], label="Iq (grd)", linewidth=2)
+    plot!(p6, t, [sol[p.pll_idx[EPSILON_IDX], i] for i in 1:length(t)], label="ϵ", linewidth=2)
+
     # Combine plots
-    p_combined = plot(p1, p2, p3, p4, layout=(2, 2), size=(1200, 1800), left_margin=10mm)
+    p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1200, 1800), left_margin=10mm)
     savefig(p_combined, "inverter_simulation_results.png")
 
     # Logging the states and writing to CSV
     # Open a CSV file for writing
     open("inverter_simulation_results_load_115.csv", "w") do io
         # Write the header
-        write(io, "Time,P_1,Q_1,P_2,Q_2,P_3,Q_3,theta_pll,theta_olc,voltage_magnitude_1,voltage_magnitude_2,voltage_magnitude_3,I_12_r,I_12_i,I_13_r,I_13_i,I_23_r,I_23_i\n")
+        write(io, "Time,P_1,Q_1,P_2,Q_2,P_3,Q_3,theta_pll,theta_olc,voltage_magnitude_1,voltage_magnitude_2,voltage_magnitude_3,I_12_r,I_12_i,I_13_r,I_13_i,I_23_r,I_23_i,omega_olc,omega_pll\n")
         # Write the data
         for i in 1:length(t)
             write(io, "$(t[i]),")
@@ -569,7 +589,9 @@ function run_inverter_model(network_file)
             write(io, "$(line_13_current_values_r[i]),")
             write(io, "$(line_13_current_values_q[i]),")
             write(io, "$(line_23_current_values_r[i]),")
-            write(io, "$(line_23_current_values_q[i])\n")
+            write(io, "$(line_23_current_values_q[i]),")
+            write(io, "$(ω_olc_values[i]),")
+            write(io, "$(ω_pll_values[i])\n")
         end
     end
     return sol
