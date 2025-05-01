@@ -32,33 +32,89 @@ theta_olc_line = logs_line["theta_olc"]
 theta_olc_115 = logs_115["theta_olc"]
 theta_olc_85 = logs_85["theta_olc"]
 
+omega_pll_line = logs_line["omega_pll"]
+omega_pll_115 = logs_115["omega_pll"]
+omega_pll_85 = logs_85["omega_pll"]
+omega_olc_line = logs_line["omega_olc"]
+omega_olc_115 = logs_115["omega_olc"]
+omega_olc_85 = logs_85["omega_olc"]
+
 fig = plt.figure(figsize=(10, 15))
+
+# --- Subplot 1 ---
 ax1 = fig.add_subplot(3, 1, 1)
-ax1.plot(time_115, theta_pll_115, label="PLL", color="tab:brown")
-ax1.plot(time_115, theta_olc_115, label="OLC", color="tab:cyan")
+ax1.plot(time_115, theta_pll_115, label="Theta PLL", color="tab:brown")
+ax1.plot(time_115, theta_olc_115, label="Theta OLC", color="tab:cyan")
 ax1.set_title("Load Decrease")
 ax1.set_ylabel("Theta (degrees)")
 ax1.grid()
 
+ax1b = ax1.twinx()
+ax1b.plot(
+    time_115,
+    omega_pll_115 * 60.0,
+    label="Omega PLL",
+    color="tab:orange",
+    linestyle="--",
+)
+ax1b.plot(
+    time_115, omega_olc_115 * 60.0, label="Omega OLC", color="tab:blue", linestyle="--"
+)
+ax1b.set_ylabel("Omega (Hz)")
+
+# --- Subplot 2 ---
 ax2 = fig.add_subplot(3, 1, 2)
-ax2.plot(time_85, theta_pll_85, label="PLL", color="tab:brown")
-ax2.plot(time_85, theta_olc_85, label="OLC", color="tab:cyan")
+ax2.plot(time_85, theta_pll_85, label="Theta PLL", color="tab:brown")
+ax2.plot(time_85, theta_olc_85, label="Theta OLC", color="tab:cyan")
 ax2.set_title("Load Increase")
 ax2.set_ylabel("Theta (degrees)")
 ax2.grid()
 
+ax2b = ax2.twinx()
+ax2b.plot(
+    time_85, omega_pll_85 * 60.0, label="Omega PLL", color="tab:orange", linestyle="--"
+)
+ax2b.plot(
+    time_85, omega_olc_85 * 60.0, label="Omega OLC", color="tab:blue", linestyle="--"
+)
+ax2b.set_ylabel("Omega (Hz)")
+
+# --- Subplot 3 ---
 ax3 = fig.add_subplot(3, 1, 3)
-ax3.plot(time_line, theta_pll_line, label="PLL", color="tab:brown")
-ax3.plot(time_line, theta_olc_line, label="OLC", color="tab:cyan")
+ax3.plot(time_line, theta_pll_line, label="Theta PLL", color="tab:brown")
+ax3.plot(time_line, theta_olc_line, label="Theta OLC", color="tab:cyan")
 ax3.set_title("Line Trip")
 ax3.set_ylabel("Theta (degrees)")
 ax3.set_xlabel("Time (s)")
 ax3.grid()
 
-handles, labels = ax3.get_legend_handles_labels()
-fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.0), ncol=2)
-fig.tight_layout(rect=[0, 0.025, 1, 1])
-fig.savefig("theta_pll_olc.png", bbox_inches="tight")
+ax3b = ax3.twinx()
+ax3b.plot(
+    time_line,
+    omega_pll_line * 60.0,
+    label="Omega PLL",
+    color="tab:orange",
+    linestyle="--",
+)
+ax3b.plot(
+    time_line,
+    omega_olc_line * 60.0,
+    label="Omega OLC",
+    color="tab:blue",
+    linestyle="--",
+)
+ax3b.set_ylabel("Omega (Hz)")
+
+# --- Legend ---
+lines, labels = [], []
+for ax in [ax1, ax1b]:
+    line, label = ax.get_legend_handles_labels()
+    lines += line
+    labels += label
+
+fig.legend(lines, labels, loc="lower center", bbox_to_anchor=(0.5, 0.0), ncol=2)
+fig.tight_layout(rect=[0, 0.05, 1, 1])
+fig.savefig("theta_omega_pll_olc.png", bbox_inches="tight")
 
 # --- Voltage Magnitudes ---
 v_mag_line_1 = logs_line["voltage_magnitude_1"]
@@ -73,25 +129,25 @@ v_mag_85_3 = logs_85["voltage_magnitude_3"]
 
 fig = plt.figure(figsize=(10, 15))
 ax1 = fig.add_subplot(3, 1, 1)
+ax1.plot(time_115, v_mag_115_3, label="Load", color="magenta")
 ax1.plot(time_115, v_mag_115_1, label="Infinite Bus", color="tab:blue")
 ax1.plot(time_115, v_mag_115_2, label="Converter", color="tab:orange")
-ax1.plot(time_115, v_mag_115_3, label="Load", color="magenta")
 ax1.set_title("Load Decrease")
 ax1.set_ylabel("Voltage Magnitude (p.u.)")
 ax1.grid()
 
 ax2 = fig.add_subplot(3, 1, 2)
+ax2.plot(time_85, v_mag_85_3, label="Load", color="magenta")
 ax2.plot(time_85, v_mag_85_1, label="Infinite Bus", color="tab:blue")
 ax2.plot(time_85, v_mag_85_2, label="Converter", color="tab:orange")
-ax2.plot(time_85, v_mag_85_3, label="Load", color="magenta")
 ax2.set_title("Load Increase")
 ax2.set_ylabel("Voltage Magnitude (p.u.)")
 ax2.grid()
 
 ax3 = fig.add_subplot(3, 1, 3)
+ax3.plot(time_line, v_mag_line_3, label="Load", color="magenta")
 ax3.plot(time_line, v_mag_line_1, label="Infinite Bus", color="tab:blue")
 ax3.plot(time_line, v_mag_line_2, label="Converter", color="tab:orange")
-ax3.plot(time_line, v_mag_line_3, label="Load", color="magenta")
 ax3.set_title("Line Trip")
 ax3.set_ylabel("Voltage Magnitude (p.u.)")
 ax3.set_xlabel("Time (s)")
