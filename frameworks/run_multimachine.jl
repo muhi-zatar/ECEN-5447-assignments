@@ -22,12 +22,12 @@ sys = build_system(PSIDTestSystems, "psid_test_threebus_multimachine_dynlines")
 # Define a helper function for plotting
 function plot_stuff(results, title=nothing)
     # Bus voltages
-    V_mag_series_IB = get_voltage_magnitude_series(results, 101)
-    V_mag_series_SM = get_voltage_magnitude_series(results, 102)
+    V_mag_series_SM = get_voltage_magnitude_series(results, 101)
+    V_mag_series_CV = get_voltage_magnitude_series(results, 102)
     V_mag_series_L = get_voltage_magnitude_series(results, 103)
 
     p1 = plot(V_mag_series_SM, label="SG Bus", title="Bus Voltages", ylim=(0.85, 1.15), linewidth=2)
-    plot!(p1, V_mag_series_IB, label="Infinite Bus", linewidth=2)
+    plot!(p1, V_mag_series_CV, label="CV Bus", linewidth=2)
     plot!(p1, V_mag_series_L, label="Load Bus", linewidth=2)
     ylabel!(p1, "Voltage [p.u.]")
     xlabel!(p1, "Time [s]")
@@ -38,9 +38,14 @@ function plot_stuff(results, title=nothing)
     end
 
     # Rotor angle
-    rotor_angle_series = get_state_series(results, ("generator-102-1", :δ))
+    rotor_angle_series = get_state_series(results, ("generator-101-1", :δ))
+    pll_angle_series = get_state_series(results, ("generator-102-1", :θ_pll))
+    oc_angle_series = get_state_series(results, ("generator-102-1", :θ_oc))
 
     p2 = plot(rotor_angle_series[1], rad2deg.(rotor_angle_series[2]), label="SG Bus", title="Rotor Angles", ylim=(5, 20), linewidth=2)
+    plot!(p2, oc_angle_series[1], rad2deg.(oc_angle_series[2]), label="OLC", linewidth=2)
+    plot!(p2, pll_angle_series[1], rad2deg.(pll_angle_series[2]), label="PLL", linewidth=2)
+
     ylabel!(p2, "δ [degree]")
     xlabel!(p2, "Time [s]")
     if title !== nothing
@@ -50,9 +55,15 @@ function plot_stuff(results, title=nothing)
     end
 
     # Frequency
-    rotor_speed_series = get_state_series(results, ("generator-102-1", :ω))
+    rotor_speed_series = get_state_series(results, ("generator-101-1", :ω))
+    outerloop_power_series = get_state_series(results, ("generator-102-1", :p_oc))
+    outerloop_ω_ref = 1.0
+    outerloop_Rp = 0.05
+    outerloop_P_ref = results.setpoints["generator-102-1"]["P_ref"]
+    ω_olc_series = (outerloop_ω_ref .+ outerloop_Rp) .* (outerloop_P_ref .- outerloop_power_series[2])
 
     p3 = plot(rotor_speed_series[1], (rotor_speed_series[2] .* 60), label="SG Bus", title="Rotor Speed", ylim=(59.9, 60.1), linewidth=2)
+    plot!(p3, outerloop_power_series[1], (ω_olc_series .* 60), label="OLC", linewidth=2)
     ylabel!(p3, "ω [Hz]")
     xlabel!(p3, "Time [s]")
     if title !== nothing
@@ -62,10 +73,12 @@ function plot_stuff(results, title=nothing)
     end
 
     # Active power
-    active_power_series_SM = get_activepower_series(results, "generator-102-1")
+    active_power_series_SM = get_activepower_series(results, "generator-101-1")
+    active_power_series_CV = get_activepower_series(results, "generator-102-1")
     active_power_series_L = get_activepower_series(results, "load1031")
 
     p4 = plot(active_power_series_SM[1], ((active_power_series_SM[2] .- active_power_series_SM[2][1]) .* 100), label="SG Bus", title="Bus Active Power Generation/Consumption", ylim=(-50, 50), linewidth=2)
+    plot!(p4, active_power_series_CV[1], ((active_power_series_CV[2] .- active_power_series_CV[2][1]) .* 100), label="CV Bus", linewidth=2)
     plot!(p4, active_power_series_L[1], ((active_power_series_L[2] .- active_power_series_L[2][1]) .* 100), label="Load Bus", linewidth=2)
     ylabel!(p4, "Active Power Deviation [MW]")
     xlabel!(p4, "Time [s]")
@@ -74,30 +87,6 @@ function plot_stuff(results, title=nothing)
     else
         savefig(p4, "active_power.png")
     end
-
-    # P-δ characteristic
-    p5 = plot(rad2deg.(rotor_angle_series[2]), (active_power_series_SM[2] .* 100), label="SG Bus", title="P-δ characteristic", xlim=(5, 20), ylim=(70, 110), linewidth=2)
-    ylabel!(p5, "Active Power [MW]")
-    xlabel!(p5, "δ [degree]")
-    if title !== nothing
-        savefig(p5, "power_vs_angle_$title.png")
-    else
-        savefig(p5, "power_vs_angle.png")
-    end
-
-    # V-Q characteristic
-    reactive_power_series_SM = get_reactivepower_series(results, "generator-102-1")
-
-    p6 = plot(V_mag_series_SM[2], (reactive_power_series_SM[2] .* 100), label="SG Bus", title="V-Q characteristic", xlim=(0.9, 1.1), linewidth=2)
-    scatter!(p6, [V_mag_series_SM[2][1]], [(reactive_power_series_SM[2][1] .* 100)], label="start")
-    scatter!(p6, [V_mag_series_SM[2][end]], [(reactive_power_series_SM[2][end] .* 100)], label="end")
-    ylabel!(p6, "Reactive Power [MVar]")
-    xlabel!(p6, "Voltage [p.u.]")
-    if title !== nothing
-        savefig(p6, "reactive_power_vs_voltage_$title.png")
-    else
-        savefig(p6, "reactive_power_vs_voltage.png")
-    end
     return
 end
 
@@ -105,19 +94,20 @@ end
 
 # See which buses have generators
 gens = collect(get_components(ThermalStandard, sys))
-converter_gen = gens[2]     # Converter goes on Bus 1
-machine_gen = gens[1]       # Machine goes on Bus 2
-
+machine_gen = gens[2]     # Synchronous Machine goes on Bus 1
+converter_gen = gens[1]       # Inverter goes on Bus 2
 
 # Remove dynamic injectors (to prepare for replacement by our model)
 remove_component!(sys, get_dynamic_injector(converter_gen))
 remove_component!(sys, get_dynamic_injector(machine_gen))
 
-# Remove the ThermalStandard generator that's currently at the first bus
-# remove_component!(sys, converter_gen)
+# Define the slack bus
+slack_bus = first(get_components(x -> get_bustype(x) == ACBusTypes.REF, Bus, sys))
 
-# Remove the ThermalStandard generator that's currently at the second bus
-# remove_component!(sys, machine_gen)
+# Ensure that machine goes on slack bus
+if machine_gen.bus != slack_bus
+    @warn("Placing the machine on a different bus than the slack bus will cause the ResidualModel build to fail!")
+end
 
 ### Add a dynamic generator
 
@@ -182,7 +172,6 @@ dg1 = DynamicGenerator(
     shaft=shaft_model,
     avr=exciter,
     prime_mover=governor,
-    # exciter = exciter,
     pss=PSY.PSSFixed(V_pss=0.0),
     base_power=get_base_power(machine_gen),
     # InfrastructureSystems.InfrastructureSystemsInternal()
@@ -253,7 +242,7 @@ tspan = (0.0, 30.0)
 sim = Simulation(
     ResidualModel,
     sys,
-    pwd(),
+    "../results/Multimachine_Results/",
     tspan,
     console_level=Logging.Info
 )
