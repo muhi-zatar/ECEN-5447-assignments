@@ -140,21 +140,29 @@ function run_multimachine_model(network_file)
     P_machine = P_sol[BUS_MACHINE_MODEL]
     Q_machine = Q_sol[BUS_MACHINE_MODEL]
 
+    # Construct complex voltage to pass to machine initialization
     V_terminal_machine_init = V_mag_machine * exp(im * V_angle_machine)
-    println("Initial power flow results:")
+
+    println("\nInitial power flow results (Bus 1 - Machine):")
     println("V_terminal_machine = $V_mag_machine p.u ∠ $V_angle_machine rad")
-    println("P = $P_machine pu, Q = $Q_machine pu")
+    println("P_machine = $P_machine pu, Q_machine = $Q_machine pu")
 
     # Extract values for the machine bus
-    V_mag_converter = V_sol[BUS_MACHINE_MODEL]
-    V_angle_converter = θ_sol[BUS_MACHINE_MODEL]
-    P = P_sol[BUS_MACHINE_MODEL]
-    Q = Q_sol[BUS_MACHINE_MODEL]
+    V_mag_converter = V_sol[BUS_CONVERTER_MODEL]
+    V_angle_converter = θ_sol[BUS_CONVERTER_MODEL]
+    P_converter = P_sol[BUS_CONVERTER_MODEL]
+    Q_converter = Q_sol[BUS_CONVERTER_MODEL]
 
-    V_terminal_converter_init = V_mag_converter * exp(im * V_angle_converter)
-    println("Initial power flow results:")
+    println("\nInitial power flow results (Bus 2 - Converter):")
     println("V_terminal = $V_mag_converter p.u ∠ $V_angle_converter rad")
-    println("P = $P pu, Q = $Q pu")
+    println("P_converter = $P_converter pu, Q_converter = $Q_converter pu")
+
+    # Debugging
+    V_mag_load = V_sol[BUS_LOAD]
+    V_angle_load = θ_sol[BUS_LOAD]
+
+    println("\nInitial power flow results (Bus 3 - Load):")
+    println("V_terminal = $V_mag_load p.u ∠ $V_angle_load rad")
 
     # Initialize components
     network = ThreeBusNetwork()
@@ -287,18 +295,38 @@ function run_multimachine_model(network_file)
     ω_init = 1.0
     governor_states = initialize_gov(governor, τ_m_init, ω_init)
 
+    # Print initial machine states
+    println("Initial Machine States:")
+    println("delta: $(machine_states[DELTA])")
+    println("omega: $(machine_states[OMEGA])")
+    println("Eq_p: $(machine_states[EQ_P])")
+    println("Ed_p: $(machine_states[ED_P])")
+    println("Psi_d_pp: $(machine_states[PSI_D_PP])")
+    println("Psi_q_pp: $(machine_states[PSI_Q_PP])")
+    println("Psi_d: $(machine_states[PSI_D])")
+    println("Psi_q: $(machine_states[PSI_Q])")
+    println("Initial AVR states:")
+    println("Efd: $(avr_states[EFD_IDX])")
+    println("Vs: $(avr_states[VS_IDX])")
+    println("Vll: $(avr_states[VLL_IDX])")
+    println("Vf: $(avr_states[VF_IDX])")
+    println("Initial Governor states:")
+    println("FV: $(governor_states[FV_IDX])")
+    println("FF: $(governor_states[FF_IDX])")
+    println("ET: $(governor_states[ET_IDX])")
+
     # Combine all states
     states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states, machine_states, avr_states, governor_states)
 
     # Define state indices
-    network_idx = 1:22
-    filter_idx = 23:28
-    pll_idx = 29:31
-    outerloop_idx = 32:34
-    innerloop_idx = 35:40
-    machine_idx = 41:48
-    avr_idx = 49:52
-    gov_idx = 55:57
+    network_idx = 1:20  # Updated to 20 network states
+    filter_idx = 21:26
+    pll_idx = 27:29
+    outerloop_idx = 30:32
+    innerloop_idx = 33:38
+    machine_idx = 39:46
+    avr_idx = 47:50
+    gov_idx = 51:53
 
     # Create parameter struct
     p = MultiMachineParams(network, filter, pll, outerloop, innerloop, V_dc, machine, avr, governor, network_idx, filter_idx, pll_idx, outerloop_idx, innerloop_idx, machine_idx, avr_idx, gov_idx)
@@ -382,7 +410,7 @@ function run_multimachine_model(network_file)
         # These are in the DQ of the network
         v_2_d = network_states_f64[V_2_D_IDX]
         v_2_q = network_states_f64[V_2_Q_IDX]
-        v_grid = [v_2_d, v_2_q]
+        v_grid_inverter = [v_2_d, v_2_q]
 
         # Unpack filter states
         # These are in the DQ of the network
@@ -399,17 +427,35 @@ function run_multimachine_model(network_file)
         # Convert grid-side filter current to rectangular coordinates for OuterLoop
         i_grd_ri = dq_ri(0.0) * [i_grd_d; i_grd_q]
 
+        # Extract PLL angle
+        θ_pll = pll_states_f64[THETA_IDX]
+
+        # ----- STEP 2: Update Machine States ----- #
+        # Update AVR states
+        update_avr_states!(avr_states_f64, du_avr, V_terminal_mag_machine, avr)
+
+        # Update Governor states
+        τ_m = update_gov_states!(gov_states_f64, du_gov, ω, governor)
+
+        # Update Machine states
+        _, S_terminal_machine, _, _, _ = update_machine_states!(
+            machine_states_f64,
+            du_machine,
+            V_terminal_machine,
+            efd,
+            τ_m,
+            machine
+        )
+
+        # ----- STEP 3: Update Inverter States ----- #
         # 1. Update PLL states
         update_pll_states!(
             pll_states_f64,
             du_pll,
             v_flt_ri,
-            params.ωsys,
+            ω,
             params.pll
         )
-
-        # Extract PLL angle
-        θ_pll = pll_states_f64[THETA_IDX]
 
         # 2. Update Outer Loop states
         δθ_olc, v_olc_ref, ω_olc = update_outerloop_states!(
@@ -417,7 +463,7 @@ function run_multimachine_model(network_file)
             du_outerloop,
             v_flt_ri,
             i_grd_ri,
-            params.ωsys,
+            ω,
             params.outerloop
         )
 
@@ -452,21 +498,22 @@ function run_multimachine_model(network_file)
             filter_states_f64,
             du_filter,
             v_inv_dq_network,
-            v_grid,
-            params.ωsys,
+            v_grid_inverter,
+            ω,
             params.filter
         )
 
         # Compute apparent power for the network
         P_terminal = v_2_d * i_grd_d + v_2_q * i_grd_q
         Q_terminal = v_2_q * i_grd_d - v_2_d * i_grd_q
-        S_terminal = complex(P_terminal, Q_terminal)
+        S_terminal_inverter = complex(P_terminal, Q_terminal)
 
         # 5. Update network states
         _, _, _, _, _ = update_network_states!(
             network_states_f64,
             du_network,
-            S_terminal,
+            S_terminal_machine,
+            S_terminal_inverter,
             params.network
         )
 
@@ -476,19 +523,34 @@ function run_multimachine_model(network_file)
         du[params.pll_idx] = du_pll
         du[params.outerloop_idx] = du_outerloop
         du[params.innerloop_idx] = du_innerloop
+        du[params.machine_idx] = du_machine
+        du[params.avr_idx] = du_avr
+        du[params.gov_idx] = du_gov
+
+        # print du vectors for debugging
+        println("du_network: $du_network")
+        println("du_filter: $du_filter")
+        println("du_pll: $du_pll")
+        println("du_outerloop: $du_outerloop")
+        println("du_innerloop: $du_innerloop")
+        println("du_machine: $du_machine")
+        println("du_avr: $du_avr")
+        println("du_governor: $du_gov")
+        exit()
+
         # Print debugging info at integer time steps
-        # if abs(t - round(t)) < 0.00001
-        #     println("t=$t: P=$(real(S_terminal)), Q=$(imag(S_terminal)), θ_pll=$(θ_pll), δθ_olc=$(δθ_olc)")
-        # end
+        if abs(t - round(t)) < 0.00001
+            println("t=$t: Machine P=$(real(S_terminal_machine)), Q=$(imag(S_terminal_machine)), Inverter P=$(real(S_terminal_inverter)), Q=$(imag(S_terminal_inverter))")
+        end
     end
 
-    inverter_system = ODEFunction(inverter_dynamics!, mass_matrix=mass_matrix)
+    multimachine_system = ODEFunction(multimachine_dynamics!, mass_matrix=mass_matrix)
 
     tspan = (0.0, 5.0)
-    prob = ODEProblem(inverter_system, states, tspan, p)
+    prob = ODEProblem(multimachine_system, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [1.0]
+    perturb_times = [10.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -694,6 +756,7 @@ function run_multimachine_model(network_file)
     return sol
 end
 
-sol = run_inverter_model("../data/ThreeBusMultiLoad.raw")  # Adjust path as needed
+# Run the simulation
+sol = run_multimachine_model("../data/ThreeBusMultiLoad.raw")  # Adjust path as needed
 
 println("Simulation complete!")

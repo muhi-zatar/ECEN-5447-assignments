@@ -71,19 +71,9 @@ function dq_ri(δ::T) where {T<:Number}
 end
 
 function dq_transformer(voltage, current, voltage_angle, current_angle)
-    # Print initial values
-    println("Voltage = $voltage")
-    println("Current = $current")
-    #println("Angle = $angle")
-
     # First, calculate with ri_dq function
     v_dq = ri_dq(voltage_angle) * voltage
     i_dq = ri_dq(current_angle) * current
-
-    #####
-    # Try the reverse
-    v_ri = dq_ri(voltage_angle) * v_dq
-    i_ri = dq_ri(current_angle) * i_dq
 
     return v_dq, i_dq
 end
@@ -151,9 +141,11 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, θ::
     # Reconstruct complex voltage and current at the terminal to calculate DQ
     S = complex.(P, Q)
     V_terminal = V_m .* ℯ .^ (im .* θ)
-    print("\n\nInitial positive sequence voltage at the bus: $(V_terminal[2])\n\n")
+    print("\n\nInitial positive sequence voltage at the machine bus: $(V_terminal[1])\n\n")
+    print("\n\nInitial positive sequence voltage at the converter bus: $(V_terminal[2])\n\n")
     I_terminal = conj.(S ./ V_terminal)
-    print("\n\nInitial positive sequence current at the bus: $(I_terminal[2])\n\n")
+    print("\n\nInitial positive sequence current at the machine bus: $(I_terminal[1])\n\n")
+    print("\n\nInitial positive sequence current at the converter bus: $(I_terminal[2])\n\n")
 
     ##### MOVE TO NETWORK DQ REFERENCE FRAME #####
     # Find DQ voltage (Milano Eigenvalue Problems Eqn 1.44)
@@ -301,6 +293,9 @@ function update_network_states!(
 
     ## Calculate network DQ current from bus power and voltage
     V1_dq = complex(v_1_d, v_1_q)
+    println("v_1_d: $v_1_d")
+    println("v_1_q: $v_1_q")
+    println("S (bus 1): $S_machine_bus")
     I1_dq = conj(S_machine_bus ./ V1_dq)            # Complex bus current injections in network DQ reference frame
     i_1_d = real(I1_dq)                    # Direct-axis component of bus current injections
     i_1_q = imag(I1_dq)                    # Quadrature-axis component of bus current injections
@@ -308,6 +303,9 @@ function update_network_states!(
     ## Calculate network DQ current from bus power and voltage
     V2_dq = complex(v_2_d, v_2_q)
     I2_dq = conj(S_converter_bus ./ V2_dq)            # Complex bus current injections in network DQ reference frame
+    println("v_2_d: $v_2_d")
+    println("v_2_q: $v_2_q")
+    println("S (bus 2): $S_converter_bus")
     i_2_d = real(I2_dq)                    # Direct-axis component of bus current injections
     i_2_q = imag(I2_dq)                    # Quadrature-axis component of bus current injections
 
@@ -341,6 +339,15 @@ function update_network_states!(
     # Bus 1
     derivatives[I_B1_D_IDX] = i_1_d - i_12_d - i_13_d - i_b1_d                                                # d/dt (i_b1_d) = 0
     derivatives[I_B1_Q_IDX] = i_1_q - i_12_q - i_13_q - i_b1_q                                                # d/dt (i_b1_q) = 0
+    # Debugging
+    println("I_B1_D = $i_b1_d")
+    println("I_B1_Q = $i_b1_q")
+    println("I_12_D = $i_12_d")
+    println("I_12_Q = $i_12_q")
+    println("I_13_D = $i_13_d")
+    println("I_13_Q = $i_13_q")
+    println("I_1_D = $i_1_d")
+    println("I_1_Q = $i_1_q")
     # Bus 2
     derivatives[I_B2_D_IDX] = i_2_d + i_12_d - i_23_d - i_b2_d                                                # d/dt (i_b2_d) = 0
     derivatives[I_B2_Q_IDX] = i_2_q + i_12_q - i_23_q - i_b2_q                                                # d/dt (i_b2_q) = 0

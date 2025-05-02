@@ -239,6 +239,7 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
         sol_x0 = sol.zero
 
         states = zeros(Float64, 8)
+        τ_m = sol_x0[2]
         Vf = sol_x0[3]
         states[DELTA] = δ
         states[OMEGA] = 1.0
