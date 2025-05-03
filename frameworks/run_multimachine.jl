@@ -112,7 +112,7 @@ end
 
 # Define SauerPaiMachine parameters
 sp_machine = SauerPaiMachine(
-    0.002, # R
+    0.01, # R
     1.79, # Xd
     1.71, # Xq
     0.169, # Xd_p
@@ -140,7 +140,7 @@ governor = GasTG(
     2.0,    # T3
     1.0,     # AT
     2.5,     # Kt
-    (0.01, 1.1), # Vlim
+    (-99.0, 99.0), # Vlim
     0.0    # D_turb
 )
 
@@ -150,7 +150,7 @@ avr = PSY.EXST1(
     (-5.0, 5.0), # Vi_lim
     10.0, # Tc
     20.0, # Tb
-    200.0, # Ka
+    50.0, # Ka
     0.1, # Ta
     (0.0, 6.0), # Vr_limit
     0.0, # Kc
