@@ -93,9 +93,8 @@ end
 ##### STEP 1: MODIFY THE NETWORK TO MATCH OUR MODEL #####
 
 # See which buses have generators
-gens = collect(get_components(ThermalStandard, sys))
-machine_gen = gens[2]     # Synchronous Machine goes on Bus 1
-converter_gen = gens[1]       # Inverter goes on Bus 2
+machine_gen = get_component(ThermalStandard, sys, "generator-101-1")        # Synchronous Machine goes on Bus 1
+converter_gen = get_component(ThermalStandard, sys, "generator-102-1")      # Inverter goes on Bus 2
 
 # Remove dynamic injectors (to prepare for replacement by our model)
 remove_component!(sys, get_dynamic_injector(converter_gen))
@@ -125,10 +124,6 @@ sp_machine = SauerPaiMachine(
     0.85, # Tq0_p 
     0.032, # Td0_pp
     0.05, # Tq0_pp
-    # γ_d1 = ,
-    # γ_q1 = ,
-    # γ_d2 = ,
-    # γ_q2 = ,
 )
 
 # Define Shaft with single mass
@@ -150,7 +145,7 @@ governor = GasTG(
 )
 
 # Define EXST1 AVR
-exciter = PSY.EXST1(
+avr = PSY.EXST1(
     0.01, # Tr
     (-5.0, 5.0), # Vi_lim
     10.0, # Tc
@@ -170,7 +165,7 @@ dg1 = DynamicGenerator(
     ω_ref=1.0,
     machine=sp_machine,
     shaft=shaft_model,
-    avr=exciter,
+    avr=avr,
     prime_mover=governor,
     pss=PSY.PSSFixed(V_pss=0.0),
     base_power=get_base_power(machine_gen),
@@ -242,7 +237,7 @@ tspan = (0.0, 30.0)
 sim = Simulation(
     ResidualModel,
     sys,
-    "../results/Multimachine_Results/",
+    mktempdir(),
     tspan,
     console_level=Logging.Info
 )
@@ -283,8 +278,9 @@ sim_dyn = Simulation(
     ResidualModel, #Type of model used
     sys, #system
     pwd(), #folder to output results
-    (0.0, 30.0), #time span
+    (0.0, 5.0), #time span
     Ybus_change_dyn, #Type of perturbation
+    ; console_level=Logging.Debug
 )
 
 #Run the simulation
