@@ -394,9 +394,9 @@ function run_multimachine_model(network_file)
         du_gov = zeros(Float64, length(p.gov_idx))
 
         # Grab terminal voltage from network at bus 1 (machine bus)
-        v_1_d = network_states_f64[V_2_D_IDX]
-        v_1_q = network_states_f64[V_2_Q_IDX]
-        V_RI_machine = dq_ri(0.0) * [v_1_d; v_1_q]
+        v_1_d = network_states_f64[V_1_D_IDX]
+        v_1_q = network_states_f64[V_1_Q_IDX]
+        V_RI_machine = dq_ri(0.0) * [v_1_d; v_1_q]      # Convert to rectangular coordinates
         V_terminal_machine = complex(V_RI_machine[1], V_RI_machine[2])
         V_terminal_mag_machine = abs(V_terminal_machine)
 
