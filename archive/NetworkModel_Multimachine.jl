@@ -71,19 +71,9 @@ function dq_ri(δ::T) where {T<:Number}
 end
 
 function dq_transformer(voltage, current, voltage_angle, current_angle)
-    # Print initial values
-    println("Voltage = $voltage")
-    println("Current = $current")
-    #println("Angle = $angle")
-
     # First, calculate with ri_dq function
     v_dq = ri_dq(voltage_angle) * voltage
     i_dq = ri_dq(current_angle) * current
-
-    #####
-    # Try the reverse
-    v_ri = dq_ri(voltage_angle) * v_dq
-    i_ri = dq_ri(current_angle) * i_dq
 
     return v_dq, i_dq
 end
@@ -106,7 +96,7 @@ mutable struct ThreeBusNetwork
     Z_L::Complex{Float64}                         # Impedance of the load at Bus 3
     M::AbstractArray{Float64}                     # The coefficients that go on the diagonal of the mass matrix
     machine_angle::Float64
-    
+
 
     # Constructor with default values
     function ThreeBusNetwork(;
@@ -124,7 +114,7 @@ mutable struct ThreeBusNetwork
         E_IB_Q=0.0,                               # To be filled in from power flow solution
         Z_L=0.0 + im * 0.0,                       # To be filled in from power flow solution
         M=zeros(Float64, NUM_STATES, NUM_STATES),  # To be filled in during initialization
-        machine_angle=0.0 
+        machine_angle=0.0
     )
         return new(R_12, X_12, B_1, R_13, X_13, B_3, R_23, X_23, B_2, X_IB, E_IB_D, E_IB_Q, Z_L, M, machine_angle)
     end # constructor function
@@ -147,9 +137,9 @@ Two important notes when working with the network:
        vectors of voltages, angles, etc., rather than single values as used by the generator 
        components.
 ```
-function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64}, 
-        θ::Vector{Float64}, P::Vector{Float64}, 
-        Q::Vector{Float64}, δ_machine::Float64=0.0)
+function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64},
+    θ::Vector{Float64}, P::Vector{Float64},
+    Q::Vector{Float64}, δ_machine::Float64=0.0)
     # Prepare state vector for return
     states = zeros(Float64, NUM_STATES)
 
@@ -165,12 +155,12 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64},
     I_dq = zeros(Complex{Float64}, 3)
     V_dq = zeros(Complex{Float64}, 3)
     for i in 1:3
-    V_RI = [real(V_terminal[i]); imag(V_terminal[i])]
-    I_RI = [real(I_terminal[i]); imag(I_terminal[i])]
-    # Use machine angle as reference frame instead of 0.0
-    V_DQ, I_DQ = dq_transformer(V_RI, I_RI, δ_machine, δ_machine)
-    V_dq[i] = complex(V_DQ[1], V_DQ[2])
-    I_dq[i] = complex(I_DQ[1], I_DQ[2])
+        V_RI = [real(V_terminal[i]); imag(V_terminal[i])]
+        I_RI = [real(I_terminal[i]); imag(I_terminal[i])]
+        # Use machine angle as reference frame instead of 0.0
+        V_DQ, I_DQ = dq_transformer(V_RI, I_RI, δ_machine, δ_machine)
+        V_dq[i] = complex(V_DQ[1], V_DQ[2])
+        I_dq[i] = complex(I_DQ[1], I_DQ[2])
     end
     i_d = real.(I_dq)
     i_q = imag.(I_dq)
@@ -235,9 +225,9 @@ function initialize_network(network::ThreeBusNetwork, V_m::Vector{Float64},
     states[I_23_Q_IDX] = line_currents[6]                           # Line 2-3 q-axis current
 
     # DEBUGGING – PRINT LINE CURRENTS
-    I_12 = dq_ri(0) * [line_currents[1]; line_currents[2]]
-    I_13 = dq_ri(0) * [line_currents[3]; line_currents[4]]
-    I_23 = dq_ri(0) * [line_currents[5]; line_currents[6]]
+    I_12 = dq_ri(δ_machine) * [line_currents[1]; line_currents[2]]
+    I_13 = dq_ri(δ_machine) * [line_currents[3]; line_currents[4]]
+    I_23 = dq_ri(δ_machine) * [line_currents[5]; line_currents[6]]
     println("I_12 = $I_12")
     println("I_13 = $I_13")
     println("I_23 = $I_23")
@@ -286,7 +276,6 @@ function update_network_states!(
     S_converter_bus::Complex{Float64},
     network::ThreeBusNetwork,
     δ_machine::Float64,  # Add machine angle as parameter
-    ω_machine::Float64   # Add machine speed as parameter
 )
     # Extract network states
     i_12_d = states[I_12_D_IDX]
@@ -310,17 +299,17 @@ function update_network_states!(
     i_b3_d = states[I_B3_D_IDX]
     i_b3_q = states[I_B3_Q_IDX]
 
-    ## Calculate machine DQ current from bus power and voltage
+    # Calculate machine DQ current from bus power and voltage
     V1_dq = complex(v_1_d, v_1_q)
-    I1_dq = conj(S_machine_bus ./ V1_dq)           
-    i_1_d = real(I1_dq)                   
-    i_1_q = imag(I1_dq)                   
+    I1_dq = conj(S_machine_bus ./ V1_dq)
+    i_1_d = real(I1_dq)
+    i_1_q = imag(I1_dq)
 
-    ## Calculate machine DQ current from bus power and voltage
+    # Calculate converter DQ current from bus power and voltage
     V2_dq = complex(v_2_d, v_2_q)
-    I2_dq = conj(S_converter_bus ./ V2_dq)           
-    i_2_d = real(I2_dq)                   
-    i_2_q = imag(I2_dq)                   
+    I2_dq = conj(S_converter_bus ./ V2_dq)
+    i_2_d = real(I2_dq)
+    i_2_q = imag(I2_dq)
 
     # Unpack real and imaginary components of the load for convenience
     R_load = real(network.Z_L)
@@ -328,46 +317,58 @@ function update_network_states!(
 
     # Define derivatives of all states (differential and algebraic)
     # Line currents (differential)
-    # Add speed difference term (ω_machine - ωsys) to account for the rotating reference frame
-    ω_slip = ω_machine - 1.0  # 1.0 is the base system frequency in pu
-    
-    # Update the differential equations with slip frequency terms
-    # For line currents
-    derivatives[I_12_D_IDX] = (v_1_d - v_2_d - network.R_12 * i_12_d + network.X_12 * i_12_q) + ω_slip * i_12_q              
-    derivatives[I_12_Q_IDX] = (v_1_q - v_2_q - network.R_12 * i_12_q - network.X_12 * i_12_d) - ω_slip * i_12_d              
-    derivatives[I_13_D_IDX] = (v_1_d - v_3_d - network.R_13 * i_13_d + network.X_13 * i_13_q) + ω_slip * i_13_q              
-    derivatives[I_13_Q_IDX] = (v_1_q - v_3_q - network.R_13 * i_13_q - network.X_13 * i_13_d) - ω_slip * i_13_d              
-    derivatives[I_23_D_IDX] = (v_2_d - v_3_d - network.R_23 * i_23_d + network.X_23 * i_23_q) + ω_slip * i_23_q              
-    derivatives[I_23_Q_IDX] = (v_2_q - v_3_q - network.R_23 * i_23_q - network.X_23 * i_23_d) - ω_slip * i_23_q              
+    derivatives[I_12_D_IDX] = (v_1_d - v_2_d - network.R_12 * i_12_d + network.X_12 * i_12_q)
+    derivatives[I_12_Q_IDX] = (v_1_q - v_2_q - network.R_12 * i_12_q - network.X_12 * i_12_d)
+    derivatives[I_13_D_IDX] = (v_1_d - v_3_d - network.R_13 * i_13_d + network.X_13 * i_13_q)
+    derivatives[I_13_Q_IDX] = (v_1_q - v_3_q - network.R_13 * i_13_q - network.X_13 * i_13_d)
+    derivatives[I_23_D_IDX] = (v_2_d - v_3_d - network.R_23 * i_23_d + network.X_23 * i_23_q)
+    derivatives[I_23_Q_IDX] = (v_2_q - v_3_q - network.R_23 * i_23_q - network.X_23 * i_23_d)
 
-    # Bus voltages (differential) - also need slip frequency terms
-    derivatives[V_1_D_IDX] = (i_b1_d + network.B_1 * v_1_q) + ω_slip * v_1_q                                                  
-    derivatives[V_1_Q_IDX] = (i_b1_q - network.B_1 * v_1_d) - ω_slip * v_1_d                                                  
-    derivatives[V_2_D_IDX] = (i_b2_d + network.B_2 * v_2_q) + ω_slip * v_2_q                                                  
-    derivatives[V_2_Q_IDX] = (i_b2_q - network.B_2 * v_2_d) - ω_slip * v_2_d                                                  
-    derivatives[V_3_D_IDX] = (i_b3_d + network.B_3 * v_3_q) + ω_slip * v_3_q                                                  
-    derivatives[V_3_Q_IDX] = (i_b3_q - network.B_3 * v_3_d) - ω_slip * v_3_d                                                  
+    # Bus voltages (differential)
+    derivatives[V_1_D_IDX] = (i_b1_d + network.B_1 * v_1_q)
+    derivatives[V_1_Q_IDX] = (i_b1_q - network.B_1 * v_1_d)
+    derivatives[V_2_D_IDX] = (i_b2_d + network.B_2 * v_2_q)
+    derivatives[V_2_Q_IDX] = (i_b2_q - network.B_2 * v_2_d)
+    derivatives[V_3_D_IDX] = (i_b3_d + network.B_3 * v_3_q)
+    derivatives[V_3_Q_IDX] = (i_b3_q - network.B_3 * v_3_d)
 
-    # Current injections at Load (algebraic) - update with slip frequency
-    derivatives[I_3_D_IDX] = (v_3_d - R_load * i_3_d + X_load * i_3_q) + ω_slip * i_3_q                                       
-    derivatives[I_3_Q_IDX] = (v_3_q - R_load * i_3_q - X_load * i_3_d) - ω_slip * i_3_d                                       
+    # Current injections
+    # Bus 3 (Load) (algebraic) –– From Milano's Eigenvalue Problems book, Eq. 1.48
+    derivatives[I_3_D_IDX] = (v_3_d - R_load * i_3_d + X_load * i_3_q)                                          # d/dt (i_3_d) = 0
+    derivatives[I_3_Q_IDX] = (v_3_q - R_load * i_3_q - X_load * i_3_d)                                          # d/dt (i_3_q) = 0
 
-    # Shunt currents (algebraic) - these don't need slip terms as they're algebraic constraints
-    derivatives[I_B1_D_IDX] = i_1_d - i_12_d - i_13_d - i_b1_d                                                
-    derivatives[I_B1_Q_IDX] = i_1_q - i_12_q - i_13_q - i_b1_q                                                
-    # (other algebraic equations)
+    # Shunt currents (algebraic)
+    # Bus 1
+    derivatives[I_B1_D_IDX] = i_1_d - i_12_d - i_13_d - i_b1_d                                                # d/dt (i_b1_d) = 0
+    derivatives[I_B1_Q_IDX] = i_1_q - i_12_q - i_13_q - i_b1_q                                                # d/dt (i_b1_q) = 0
+    # Debugging
+    # println("I_B1_D = $i_b1_d")
+    # println("I_B1_Q = $i_b1_q")
+    # println("I_12_D = $i_12_d")
+    # println("I_12_Q = $i_12_q")
+    # println("I_13_D = $i_13_d")
+    # println("I_13_Q = $i_13_q")
+    # println("I_1_D = $i_1_d")
+    # println("I_1_Q = $i_1_q")
+    # Bus 2
+    derivatives[I_B2_D_IDX] = i_2_d + i_12_d - i_23_d - i_b2_d                                                # d/dt (i_b2_d) = 0
+    derivatives[I_B2_Q_IDX] = i_2_q + i_12_q - i_23_q - i_b2_q                                                # d/dt (i_b2_q) = 0
+    # Bus 3
+    derivatives[I_B3_D_IDX] = i_3_d + i_23_d + i_13_d - i_b3_d                                                # d/dt (i_b3_d) = 0
+    derivatives[I_B3_Q_IDX] = i_3_q + i_23_q + i_13_q - i_b3_q                                                # d/dt (i_b3_q) = 0
 
     # Compute apparent power to return 
-    P_terminal = v_2_d * i_2_d + v_2_q * i_2_q
-    Q_terminal = v_2_q * i_2_d - v_2_d * i_2_q
+    P_terminal = v_1_d * i_1_d + v_1_q * i_1_q
+    Q_terminal = v_1_q * i_1_d - v_1_d * i_1_q
     S_terminal = complex(P_terminal, Q_terminal)
 
     # For terminal voltage/current, we need to transform back to system reference frame
     # for interfacing with other components that expect system frame values
-    V_terminal_machine_dq = v_2_d + im * v_2_q
-    
+    V_terminal_machine_dq = v_1_d + im * v_1_q
+
     # Convert from machine DQ to system reference
-    V_terminal = V_terminal_machine_dq * exp(im * (δ_machine - π/2))
+    V_terminal_RI = dq_ri(δ_machine) * [v_1_d; v_1_q]
+    V_terminal = V_terminal_RI[1] + im * V_terminal_RI[2]
 
     # Current also needs transformation
     I_terminal = conj(S_terminal / V_terminal)

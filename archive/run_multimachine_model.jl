@@ -31,7 +31,7 @@ using .PowerFlowWrapper
 const BUS_MACHINE_MODEL = 1
 const BUS_CONVERTER_MODEL = 2
 const BUS_LOAD = 3
-const NUM_STATES = 20
+const NUM_STATES_NETWORK = 20
 const I_12_D_IDX = 1
 const I_12_Q_IDX = 2
 const I_13_D_IDX = 3
@@ -74,6 +74,7 @@ const Q_M = 3
 # Inner loop state indices are exported by the module
 
 # Machine state indices
+const NUM_STATES_MACHINE = 8
 const DELTA = 1
 const OMEGA = 2
 const EQ_P = 3
@@ -84,15 +85,85 @@ const PSI_D = 7
 const PSI_Q = 8
 
 # AVR state indices
+const NUM_STATES_AVR = 4
 const EFD_IDX = 1   # Field voltage (output of amplifier)
 const VS_IDX = 2    # Sensed terminal voltage
 const VLL_IDX = 3   # Lead-lag output
 const VF_IDX = 4    # Feedback signal
 
 # Governor state indices
+const NUM_STATES_GOV = 3
 const FV_IDX = 1                # Fuel value
 const FF_IDX = 2                # Fuel flow
 const ET_IDX = 3                # Exhaust temp
+
+# states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states, machine_states, avr_states, governor_states)
+# Create a mapping of local indices to global indices
+network_start = 1
+machine_start = network_start + NUM_STATES_NETWORK
+avr_start = machine_start + NUM_STATES_MACHINE
+governor_start = avr_start + NUM_STATES_AVR
+
+# Network indices
+network_map = Dict(
+    :I_12_D_IDX => network_start + I_12_D_IDX - 1,
+    :I_12_Q_IDX => network_start + I_12_Q_IDX - 1,
+    :I_13_D_IDX => network_start + I_13_D_IDX - 1,
+    :I_13_Q_IDX => network_start + I_13_Q_IDX - 1,
+    :I_23_D_IDX => network_start + I_23_D_IDX - 1,
+    :I_23_Q_IDX => network_start + I_23_Q_IDX - 1,
+    :V_1_D_IDX => network_start + V_1_D_IDX - 1,
+    :V_1_Q_IDX => network_start + V_1_Q_IDX - 1,
+    :V_2_D_IDX => network_start + V_2_D_IDX - 1,
+    :V_2_Q_IDX => network_start + V_2_Q_IDX - 1,
+    :V_3_D_IDX => network_start + V_3_D_IDX - 1,
+    :V_3_Q_IDX => network_start + V_3_Q_IDX - 1,
+    :I_3_D_IDX => network_start + I_3_D_IDX - 1,
+    :I_3_Q_IDX => network_start + I_3_Q_IDX - 1,
+    :I_B1_D_IDX => network_start + I_B1_D_IDX - 1,
+    :I_B1_Q_IDX => network_start + I_B1_Q_IDX - 1,
+    :I_B2_D_IDX => network_start + I_B2_D_IDX - 1,
+    :I_B2_Q_IDX => network_start + I_B2_Q_IDX - 1,
+    :I_B3_D_IDX => network_start + I_B3_D_IDX - 1,
+    :I_B3_Q_IDX => network_start + I_B3_Q_IDX - 1
+)
+
+# Machine indices
+machine_map = Dict(
+    :DELTA => machine_start + DELTA - 1,
+    :OMEGA => machine_start + OMEGA - 1,
+    :EQ_P => machine_start + EQ_P - 1,
+    :ED_P => machine_start + ED_P - 1,
+    :PSI_D_PP => machine_start + PSI_D_PP - 1,
+    :PSI_Q_PP => machine_start + PSI_Q_PP - 1,
+    :PSI_D => machine_start + PSI_D - 1,
+    :PSI_Q => machine_start + PSI_Q - 1
+)
+
+# AVR indices
+avr_map = Dict(
+    :EFD_IDX => avr_start + EFD_IDX - 1,
+    :VS_IDX => avr_start + VS_IDX - 1,
+    :VLL_IDX => avr_start + VLL_IDX - 1,
+    :VF_IDX => avr_start + VF_IDX - 1
+)
+
+# Governor indices
+governor_map = Dict(
+    :FV_IDX => governor_start + FV_IDX - 1,
+    :FF_IDX => governor_start + FF_IDX - 1,
+    :ET_IDX => governor_start + ET_IDX - 1
+)
+
+# Filter indices
+filter_map = Dict(
+    :ID_INV => filter_start + FV_IDX - 1,
+    :FF_IDX => governor_start + FF_IDX - 1,
+    :ET_IDX => governor_start + ET_IDX - 1
+)
+
+# Combine into a single mapping
+global_map = merge(network_map, machine_map, avr_map, governor_map)
 
 # Matrix transformation functions
 function ri_dq(δ::T) where {T<:Number}
@@ -107,6 +178,129 @@ function dq_ri(δ::T) where {T<:Number}
         sin(δ) cos(δ)
         -cos(δ) sin(δ)
     ]
+end
+
+function ri_dq_vector(d_values, q_values)
+    # Map the network D and Q values onto real and imaginary axes
+    RI_values = map((v_d, v_q) -> dq_ri(0.0) * [v_d; v_q], d_values, q_values)
+
+    # Take the magnitude (useful for voltage)
+    mag = map(V -> hypot(V[1], V[2]), RI_values)
+
+    return RI_values, mag
+end
+
+function compute_S_vector(v_RI_values, i_RI_values)
+    # Compute apparent power based on vectors of real and imaginary voltage and current
+    S_values = map((V, I) -> [
+            V[1] * I[1] + V[2] * I[2];  # P = V_R * I_R + V_I * I_I
+            V[2] * I[1] - V[1] * I[2]   # Q = V_I * I_R - V_R * I_I
+        ], v_RI_values, i_RI_values)
+
+    return S_values
+end
+
+function make_plots(sol)
+    # Collect vectors for plotting
+    t = sol.t
+
+    # Voltages
+    v_1_d_values = [sol[global_map[:V_1_D_IDX], i] for i in 1:length(t)]
+    v_1_q_values = [sol[global_map[:V_1_Q_IDX], i] for i in 1:length(t)]
+    v_2_d_values = [sol[global_map[:V_2_D_IDX], i] for i in 1:length(t)]
+    v_2_q_values = [sol[global_map[:V_2_Q_IDX], i] for i in 1:length(t)]
+    v_3_d_values = [sol[global_map[:V_3_D_IDX], i] for i in 1:length(t)]
+    v_3_q_values = [sol[global_map[:V_3_Q_IDX], i] for i in 1:length(t)]
+
+    # Transform D,Q vectors into R,I vectors and their magnitudes
+    v_1_RI_values, v_1_magnitude = ri_dq_vector(v_1_d_values, v_1_q_values)
+    v_2_RI_values, v_2_magnitude = ri_dq_vector(v_2_d_values, v_2_q_values)
+    v_3_RI_values, v_3_magnitude = ri_dq_vector(v_3_d_values, v_3_q_values)
+
+    # # Injected currents
+    # i_2_d_values = [sol[global_map[:I_2_D_IDX], i] for i in 1:length(t)]
+    # i_2_q_values = [sol[global_map[:I_2_Q_IDX], i] for i in 1:length(t)]
+    # i_3_d_values = [sol[global_map[:I_3_D_IDX], i] for i in 1:length(t)]
+    # i_3_q_values = [sol[global_map[:I_3_Q_IDX], i] for i in 1:length(t)]
+
+    # i_2_RI_values, _ = ri_dq_vector(i_2_d_values, i_2_q_values)
+    # i_3_RI_values, _ = ri_dq_vector(i_3_d_values, i_3_q_values)
+
+    # # Line currents
+    # i_12_d_values = [sol[global_map[:I_12_D_IDX], i] for i in 1:length(t)]
+    # i_12_q_values = [sol[global_map[:I_12_Q_IDX], i] for i in 1:length(t)]
+    # i_23_d_values = [sol[global_map[:I_23_D_IDX], i] for i in 1:length(t)]
+    # i_23_q_values = [sol[global_map[:I_23_Q_IDX], i] for i in 1:length(t)]
+    # i_13_d_values = [sol[global_map[:I_13_D_IDX], i] for i in 1:length(t)]
+    # i_13_q_values = [sol[global_map[:I_13_Q_IDX], i] for i in 1:length(t)]
+
+    # i_12_RI_values, i_12_mag = ri_dq_vector(i_12_d_values, i_12_q_values)
+    # i_23_RI_values, i_23_mag = ri_dq_vector(i_23_d_values, i_23_q_values)
+    # i_13_RI_values, i_13_mag = ri_dq_vector(i_13_d_values, i_13_q_values)
+
+    # # Compute power injections
+    # S_2_values = compute_S_vector(v_2_RI_values, i_2_RI_values)
+    # S_3_values = compute_S_vector(v_3_RI_values, i_3_RI_values)
+
+    # # Create plots - Just as an example, 90% of them are not needed
+    # # Plot shaft states
+    # p1 = plot(t, [sol[global_map[:DELTA], i] for i in 1:length(t)],
+    #     label="Rotor angle (δ)", title="Machine States", linewidth=2, left_margin=10mm)
+    # savefig(p1, "../results/rotor_angle.png")
+
+    # p2 = plot(t, [sol[global_map[:OMEGA], i] for i in 1:length(t)],
+    #     label="Rotor speed (ω)", linewidth=2, left_margin=10mm)
+    # savefig(p2, "../results/rotor_speed.png")
+
+    # # Plot fluxes
+    # p3 = plot(t, [sol[global_map[:EQ_P], i] for i in 1:length(t)],
+    #     label="eq'", title="Machine Fluxes", linewidth=2, left_margin=10mm)
+    # plot!(p3, t, [sol[global_map[:ED_P], i] for i in 1:length(t)],
+    #     label="ed'", linewidth=2)
+    # plot!(p3, t, [sol[global_map[:PSI_D_PP], i] for i in 1:length(t)],
+    #     label="ψd''", linewidth=2)
+    # plot!(p3, t, [sol[global_map[:PSI_Q_PP], i] for i in 1:length(t)],
+    #     label="ψq''", linewidth=2)
+    # savefig(p3, "../results/fluxes.png")
+
+    # # Plot avr states
+    # p4 = plot(t, [sol[global_map[:EFD_IDX], i] for i in 1:length(t)],
+    #     label="Field Voltage", title="AVR States", linewidth=2, left_margin=10mm)
+    # plot!(p4, t, [sol[global_map[:VS_IDX], i] for i in 1:length(t)],
+    #     label="Sensed Terminal Voltage", linewidth=2)
+    # plot!(p4, t, [sol[global_map[:VLL_IDX], i] for i in 1:length(t)],
+    #     label="Lead-Lag State", linewidth=2)
+    # plot!(p4, t, [sol[global_map[:VF_IDX], i] for i in 1:length(t)],
+    #     label="Feedback State", linewidth=2)
+    # savefig(p4, "../results/avr_states.png")
+
+    # # Plot governor states
+    # p5 = plot(t, [sol[global_map[:FV_IDX], i] for i in 1:length(t)],
+    #     label="Fuel Value", title="Governor States", linewidth=2, left_margin=10mm)
+    # plot!(p5, t, [sol[global_map[:FF_IDX], i] for i in 1:length(t)],
+    #     label="Fuel Flow", linewidth=2)
+    # plot!(p5, t, [sol[global_map[:ET_IDX], i] for i in 1:length(t)],
+    #     label="Exhaust Temp", linewidth=2)
+    # savefig(p5, "../results/gov_states.png")
+
+    # # Plot line currents
+    # p6 = plot(t, i_12_mag, title="Line Currents", label="I_12", linewith=2, left_margin=10mm)
+    # plot!(p6, t, i_23_mag, label="I_23", linewith=2)
+    # plot!(p6, t, i_13_mag, label="I_13", linewith=2)
+    # savefig(p6, "../results/line_currrents.png")
+
+    # Plot bus voltages
+    p7 = plot(t, v_1_magnitude, label="Infinite Bus", linewidth=2, title="Bus Voltage Magnitudes", left_margin=10mm)
+    plot!(p7, t, v_2_magnitude, label="Machine Bus", linewidth=2)
+    plot!(p7, t, v_3_magnitude, label="Load Bus", linewidth=2)
+    savefig(p7, "../results/bus_voltages.png")
+
+    # Plot powers
+    # p8 = plot(t, first.(S_2_values), label="Inf. Bus (P)", linewidth=2, title="Bus Power", left_margin=10mm)
+    # plot!(p8, t, last.(S_2_values), label="Inf. Bus (Q)", linewidth=2)
+    # plot!(p8, t, first.(S_3_values), label="Load (P)", linewidth=2)
+    # plot!(p8, t, last.(S_3_values), label="Load (Q)", linewidth=2)
+    # savefig(p8, "../results/powers.png")
 end
 
 # Parameters structure for the integrated model
@@ -184,9 +378,39 @@ function run_multimachine_model(network_file)
         P_ref=P_machine  # Set reference power to initial power
     )
 
-    # Initialize network states
-    # Return values are in Network DQ – which the filter should use
-    network_states, Id_machine, Iq_machine, Id_grd, Iq_grd = initialize_network(network, V_sol, θ_sol, P_sol, Q_sol)
+    # Initialize machine states
+    machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal_machine_init, V_angle_machine, P_machine, Q_machine)
+    avr_states = initialize_avr(avr, V_mag_machine, Vf_init)  # Assume zero field current initially, is that right?
+    ω_init = 1.0
+    governor_states = initialize_gov(governor, τ_m_init, ω_init)
+
+    # Print initial machine states
+    println("Initial Machine States:")
+    println("delta: $(machine_states[DELTA])")
+    println("omega: $(machine_states[OMEGA])")
+    println("Eq_p: $(machine_states[EQ_P])")
+    println("Ed_p: $(machine_states[ED_P])")
+    println("Psi_d_pp: $(machine_states[PSI_D_PP])")
+    println("Psi_q_pp: $(machine_states[PSI_Q_PP])")
+    println("Psi_d: $(machine_states[PSI_D])")
+    println("Psi_q: $(machine_states[PSI_Q])")
+    println("Initial AVR states:")
+    println("Efd: $(avr_states[EFD_IDX])")
+    println("Vs: $(avr_states[VS_IDX])")
+    println("Vll: $(avr_states[VLL_IDX])")
+    println("Vf: $(avr_states[VF_IDX])")
+    println("Initial Governor states:")
+    println("FV: $(governor_states[FV_IDX])")
+    println("FF: $(governor_states[FF_IDX])")
+    println("ET: $(governor_states[ET_IDX])")
+
+    # Extract initial machine angle for reference frame
+    δ_machine_init = machine_states[DELTA]
+
+    # Initialize network states with machine angle as reference
+    # Return values are in machine DQ - which is our "system" DQ for the filter to use
+    network_states, Id_machine, Iq_machine, Id_grd, Iq_grd = initialize_network(
+        network, V_sol, θ_sol, P_sol, Q_sol, δ_machine_init)
 
     # Debugging
     println("Initial Line Currents:")
@@ -220,10 +444,10 @@ function run_multimachine_model(network_file)
     # NOTE: Id_grd, Iq_grd are filter states, but they've already been calculated by the network initialization
 
     # Convert filter capacitor voltage to RI for PLL initialization
-    V_flt_ri = dq_ri(0.0) * [Vd_flt; Vq_flt]
+    V_flt_ri = dq_ri(δ_machine_init) * [Vd_flt; Vq_flt]
 
     # Convert grid-side current from the filter to RI for Outer Loop initialization
-    I_flt_ri = dq_ri(0.0) * [Id_grd; Iq_grd]
+    I_flt_ri = dq_ri(δ_machine_init) * [Id_grd; Iq_grd]
 
     # Debugging
     println("Initial Filter States:")
@@ -288,32 +512,6 @@ function run_multimachine_model(network_file)
     # Override outer loop's initial guess at the angle and reference voltage
     outerloop_states[THETA_OLC] = δθ_olc
     set_V_ref(outerloop, v_olc_ref)
-
-    # Initialize machine states
-    machine_states, Vf_init, τ_m_init = initialize_machine(machine, V_terminal_machine_init, V_angle_machine, P_machine, Q_machine)
-    avr_states = initialize_avr(avr, V_mag_machine, Vf_init)  # Assume zero field current initially, is that right?
-    ω_init = 1.0
-    governor_states = initialize_gov(governor, τ_m_init, ω_init)
-
-    # Print initial machine states
-    println("Initial Machine States:")
-    println("delta: $(machine_states[DELTA])")
-    println("omega: $(machine_states[OMEGA])")
-    println("Eq_p: $(machine_states[EQ_P])")
-    println("Ed_p: $(machine_states[ED_P])")
-    println("Psi_d_pp: $(machine_states[PSI_D_PP])")
-    println("Psi_q_pp: $(machine_states[PSI_Q_PP])")
-    println("Psi_d: $(machine_states[PSI_D])")
-    println("Psi_q: $(machine_states[PSI_Q])")
-    println("Initial AVR states:")
-    println("Efd: $(avr_states[EFD_IDX])")
-    println("Vs: $(avr_states[VS_IDX])")
-    println("Vll: $(avr_states[VLL_IDX])")
-    println("Vf: $(avr_states[VF_IDX])")
-    println("Initial Governor states:")
-    println("FV: $(governor_states[FV_IDX])")
-    println("FF: $(governor_states[FF_IDX])")
-    println("ET: $(governor_states[ET_IDX])")
 
     # Combine all states
     states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states, machine_states, avr_states, governor_states)
@@ -393,10 +591,15 @@ function run_multimachine_model(network_file)
         du_avr = zeros(Float64, length(p.avr_idx))
         du_gov = zeros(Float64, length(p.gov_idx))
 
+        # Extract machine angle for reference frame transformation
+        δ_machine = machine_states_f64[DELTA]
+
         # Grab terminal voltage from network at bus 1 (machine bus)
+        # NOTE: This is in the machine DQ reference frame already in this case, but we still 
+        # transform it back to RI because that's what our model is expecting to receive
         v_1_d = network_states_f64[V_1_D_IDX]
         v_1_q = network_states_f64[V_1_Q_IDX]
-        V_RI_machine = dq_ri(0.0) * [v_1_d; v_1_q]      # Convert to rectangular coordinates
+        V_RI_machine = dq_ri(δ_machine) * [v_1_d; v_1_q]      # Convert to rectangular coordinates
         V_terminal_machine = complex(V_RI_machine[1], V_RI_machine[2])
         V_terminal_mag_machine = abs(V_terminal_machine)
 
@@ -422,10 +625,10 @@ function run_multimachine_model(network_file)
         i_grd_q = filter_states_f64[IQ_GRD]
 
         # Convert filter capacitor voltage to rectangular coordinates for PLL
-        v_flt_ri = dq_ri(0.0) * [v_flt_d; v_flt_q]
+        v_flt_ri = dq_ri(δ_machine) * [v_flt_d; v_flt_q]
 
         # Convert grid-side filter current to rectangular coordinates for OuterLoop
-        i_grd_ri = dq_ri(0.0) * [i_grd_d; i_grd_q]
+        i_grd_ri = dq_ri(δ_machine) * [i_grd_d; i_grd_q]
 
         # Extract PLL angle
         θ_pll = pll_states_f64[THETA_IDX]
@@ -514,7 +717,8 @@ function run_multimachine_model(network_file)
             du_network,
             S_terminal_machine,
             S_terminal_inverter,
-            params.network
+            params.network,
+            δ_machine
         )
 
         # Copy derivatives to output
@@ -528,15 +732,15 @@ function run_multimachine_model(network_file)
         du[params.gov_idx] = du_gov
 
         # print du vectors for debugging
-        println("du_network: $du_network")
-        println("du_filter: $du_filter")
-        println("du_pll: $du_pll")
-        println("du_outerloop: $du_outerloop")
-        println("du_innerloop: $du_innerloop")
-        println("du_machine: $du_machine")
-        println("du_avr: $du_avr")
-        println("du_governor: $du_gov")
-        exit()
+        # println("du_network: $du_network")
+        # println("du_filter: $du_filter")
+        # println("du_pll: $du_pll")
+        # println("du_outerloop: $du_outerloop")
+        # println("du_innerloop: $du_innerloop")
+        # println("du_machine: $du_machine")
+        # println("du_avr: $du_avr")
+        # println("du_governor: $du_gov")
+        # exit()
 
         # Print debugging info at integer time steps
         if abs(t - round(t)) < 0.00001
@@ -583,6 +787,9 @@ function run_multimachine_model(network_file)
     # Run simulation
     sol = solve(prob, Rodas5(autodiff=false), dt=0.0001, adaptive=false, saveat=0.0001, callback=cb, tstops=perturb_times)
 
+    # Process results
+    make_plots(sol)
+
     t = sol.t
 
     # Allocate vectors for plotting
@@ -605,84 +812,84 @@ function run_multimachine_model(network_file)
     ω_pll_values = Float64[]
 
     # Add values to plotting vectors
-    for i in 1:length(t)
-        # Get current state values
-        network_states = sol[p.network_idx, i]
-        filter_states = sol[p.filter_idx, i]
-        innerloop_states = sol[p.innerloop_idx, i]
-        outerloop_states = sol[p.outerloop_idx, i]
-        pll_states = sol[p.pll_idx, i]
+    # for i in 1:length(t)
+    #     # Get current state values
+    #     network_states = sol[p.network_idx, i]
+    #     filter_states = sol[p.filter_idx, i]
+    #     innerloop_states = sol[p.innerloop_idx, i]
+    #     outerloop_states = sol[p.outerloop_idx, i]
+    #     pll_states = sol[p.pll_idx, i]
 
-        # Line current
-        I_12_d = network_states[I_12_D_IDX-p.network_idx[1]+1]
-        I_12_q = network_states[I_12_Q_IDX-p.network_idx[1]+1]
-        I_13_d = network_states[I_13_D_IDX-p.network_idx[1]+1]
-        I_13_q = network_states[I_13_Q_IDX-p.network_idx[1]+1]
-        I_23_d = network_states[I_23_D_IDX-p.network_idx[1]+1]
-        I_23_q = network_states[I_23_Q_IDX-p.network_idx[1]+1]
+    #     # Line current
+    #     I_12_d = network_states[I_12_D_IDX-p.network_idx[1]+1]
+    #     I_12_q = network_states[I_12_Q_IDX-p.network_idx[1]+1]
+    #     I_13_d = network_states[I_13_D_IDX-p.network_idx[1]+1]
+    #     I_13_q = network_states[I_13_Q_IDX-p.network_idx[1]+1]
+    #     I_23_d = network_states[I_23_D_IDX-p.network_idx[1]+1]
+    #     I_23_q = network_states[I_23_Q_IDX-p.network_idx[1]+1]
 
-        # Terminal voltage and current
-        v_1_d = network_states[V_1_D_IDX-p.network_idx[1]+1]
-        v_1_q = network_states[V_1_Q_IDX-p.network_idx[1]+1]
-        v_3_d = network_states[V_3_D_IDX-p.network_idx[1]+1]
-        v_3_q = network_states[V_3_Q_IDX-p.network_idx[1]+1]
-        v_2_d = network_states[V_2_D_IDX-p.network_idx[1]+1]
-        v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
-        i_grd_d = filter_states[ID_GRD]
-        i_grd_q = filter_states[IQ_GRD]
-        I_1_d = network_states[I_1_D_IDX-p.network_idx[1]+1]
-        I_1_q = network_states[I_1_Q_IDX-p.network_idx[1]+1]
-        I_3_d = network_states[I_3_D_IDX-p.network_idx[1]+1]
-        I_3_q = network_states[I_3_Q_IDX-p.network_idx[1]+1]
+    #     # Terminal voltage and current
+    #     v_1_d = network_states[V_1_D_IDX-p.network_idx[1]+1]
+    #     v_1_q = network_states[V_1_Q_IDX-p.network_idx[1]+1]
+    #     v_3_d = network_states[V_3_D_IDX-p.network_idx[1]+1]
+    #     v_3_q = network_states[V_3_Q_IDX-p.network_idx[1]+1]
+    #     v_2_d = network_states[V_2_D_IDX-p.network_idx[1]+1]
+    #     v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
+    #     i_grd_d = filter_states[ID_GRD]
+    #     i_grd_q = filter_states[IQ_GRD]
+    #     #I_1_d = network_states[I_1_D_IDX-p.network_idx[1]+1]
+    #     #I_1_q = network_states[I_1_Q_IDX-p.network_idx[1]+1]
+    #     I_3_d = network_states[I_3_D_IDX-p.network_idx[1]+1]
+    #     I_3_q = network_states[I_3_Q_IDX-p.network_idx[1]+1]
 
-        # Outer loop states
-        p_m = outerloop_states[P_M]
-        ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
+    #     # Outer loop states
+    #     p_m = outerloop_states[P_M]
+    #     ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
 
-        # PLL states
-        ωsys = 1.0
-        vq_pll = pll_states[VQ_PLL_IDX]
-        ϵ_pll = pll_states[EPSILON_IDX]
-        δ_ω_pll = 1.0 - ωsys + pll.kppll * vq_pll + pll.kipll * ϵ_pll
-        ω_pll = δ_ω_pll + ωsys
+    #     # PLL states
+    #     ωsys = 1.0
+    #     vq_pll = pll_states[VQ_PLL_IDX]
+    #     ϵ_pll = pll_states[EPSILON_IDX]
+    #     δ_ω_pll = 1.0 - ωsys + pll.kppll * vq_pll + pll.kipll * ϵ_pll
+    #     ω_pll = δ_ω_pll + ωsys
 
-        # Convert line current to rectangular coordinates
-        I_12_ri = dq_ri(0.0) * [I_12_d; I_12_q]
-        I_13_ri = dq_ri(0.0) * [I_13_d; I_13_q]
-        I_23_ri = dq_ri(0.0) * [I_23_d; I_23_q]
+    #     # Convert line current to rectangular coordinates
+    #     I_12_ri = dq_ri(0.0) * [I_12_d; I_12_q]
+    #     I_13_ri = dq_ri(0.0) * [I_13_d; I_13_q]
+    #     I_23_ri = dq_ri(0.0) * [I_23_d; I_23_q]
 
-        # Calculate voltage magnitude
-        voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
-        voltage_magnitude_1 = sqrt(v_1_d^2 + v_1_q^2)
-        voltage_magnitude_3 = sqrt(v_3_d^2 + v_3_q^2)
+    #     # Calculate voltage magnitude
+    #     voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
+    #     voltage_magnitude_1 = sqrt(v_1_d^2 + v_1_q^2)
+    #     voltage_magnitude_3 = sqrt(v_3_d^2 + v_3_q^2)
 
-        # Calculate power
-        P_1 = v_1_d * I_1_d + v_1_q * I_1_q
-        Q_1 = v_1_q * I_1_d - v_1_d * I_1_q
-        P_2 = v_2_d * i_grd_d + v_2_q * i_grd_q
-        Q_2 = v_2_q * i_grd_d - v_2_d * i_grd_q
-        P_3 = v_3_d * I_3_d + v_3_q * I_3_q
-        Q_3 = v_3_q * I_3_d - v_3_d * I_3_q
+    #     # Calculate power
+    #     #P_1 = v_1_d * I_1_d + v_1_q * I_1_q
+    #     #Q_1 = v_1_q * I_1_d - v_1_d * I_1_q
+    #     P_2 = v_2_d * i_grd_d + v_2_q * i_grd_q
+    #     Q_2 = v_2_q * i_grd_d - v_2_d * i_grd_q
+    #     P_3 = v_3_d * I_3_d + v_3_q * I_3_q
+    #     Q_3 = v_3_q * I_3_d - v_3_d * I_3_q
 
-        # Push values to plotting vectors
-        push!(line_12_current_values_r, I_12_ri[1])
-        push!(line_13_current_values_r, I_13_ri[1])
-        push!(line_23_current_values_r, I_23_ri[1])
-        push!(line_12_current_values_q, I_12_ri[2])
-        push!(line_13_current_values_q, I_13_ri[2])
-        push!(line_23_current_values_q, I_23_ri[2])
-        push!(voltage_magnitude_values_1, voltage_magnitude_1)
-        push!(voltage_magnitude_values_2, voltage_magnitude_2)
-        push!(voltage_magnitude_values_3, voltage_magnitude_3)
-        push!(bus_1_p, P_1)
-        push!(bus_2_p, P_2)
-        push!(bus_3_p, P_3)
-        push!(bus_1_q, Q_1)
-        push!(bus_2_q, Q_2)
-        push!(bus_3_q, Q_3)
-        push!(ω_olc_values, ω_olc)
-        push!(ω_pll_values, ω_pll)
-    end
+    #     # Push values to plotting vectors
+    #     push!(line_12_current_values_r, I_12_ri[1])
+    #     push!(line_13_current_values_r, I_13_ri[1])
+    #     push!(line_23_current_values_r, I_23_ri[1])
+    #     push!(line_12_current_values_q, I_12_ri[2])
+    #     push!(line_13_current_values_q, I_13_ri[2])
+    #     push!(line_23_current_values_q, I_23_ri[2])
+    #     push!(voltage_magnitude_values_1, voltage_magnitude_1)
+    #     push!(voltage_magnitude_values_2, voltage_magnitude_2)
+    #     push!(voltage_magnitude_values_3, voltage_magnitude_3)
+    #     #push!(bus_1_p, P_1)
+    #     #push!(bus_2_p, P_2)
+    #     push!(bus_3_p, P_3)
+    #     push!(bus_1_q, Q_1)
+    #     push!(bus_2_q, Q_2)
+    #     push!(bus_3_q, Q_3)
+    #     push!(ω_olc_values, ω_olc)
+    #     push!(ω_pll_values, ω_pll)
+    # end
 
     # Create plots
     # Power
