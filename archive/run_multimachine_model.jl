@@ -1,6 +1,7 @@
 cd(@__DIR__)
 using Pkg
 Pkg.activate(".")
+Pkg.instantiate()
 
 using DifferentialEquations
 using Plots
@@ -155,12 +156,12 @@ governor_map = Dict(
     :ET_IDX => governor_start + ET_IDX - 1
 )
 
-# Filter indices
-filter_map = Dict(
-    :ID_INV => filter_start + FV_IDX - 1,
-    :FF_IDX => governor_start + FF_IDX - 1,
-    :ET_IDX => governor_start + ET_IDX - 1
-)
+# # Filter indices
+# filter_map = Dict(
+#     :ID_INV => filter_start + FV_IDX - 1,
+#     :FF_IDX => governor_start + FF_IDX - 1,
+#     :ET_IDX => governor_start + ET_IDX - 1
+# )
 
 # Combine into a single mapping
 global_map = merge(network_map, machine_map, avr_map, governor_map)
@@ -198,109 +199,6 @@ function compute_S_vector(v_RI_values, i_RI_values)
         ], v_RI_values, i_RI_values)
 
     return S_values
-end
-
-function make_plots(sol)
-    # Collect vectors for plotting
-    t = sol.t
-
-    # Voltages
-    v_1_d_values = [sol[global_map[:V_1_D_IDX], i] for i in 1:length(t)]
-    v_1_q_values = [sol[global_map[:V_1_Q_IDX], i] for i in 1:length(t)]
-    v_2_d_values = [sol[global_map[:V_2_D_IDX], i] for i in 1:length(t)]
-    v_2_q_values = [sol[global_map[:V_2_Q_IDX], i] for i in 1:length(t)]
-    v_3_d_values = [sol[global_map[:V_3_D_IDX], i] for i in 1:length(t)]
-    v_3_q_values = [sol[global_map[:V_3_Q_IDX], i] for i in 1:length(t)]
-
-    # Transform D,Q vectors into R,I vectors and their magnitudes
-    v_1_RI_values, v_1_magnitude = ri_dq_vector(v_1_d_values, v_1_q_values)
-    v_2_RI_values, v_2_magnitude = ri_dq_vector(v_2_d_values, v_2_q_values)
-    v_3_RI_values, v_3_magnitude = ri_dq_vector(v_3_d_values, v_3_q_values)
-
-    # # Injected currents
-    # i_2_d_values = [sol[global_map[:I_2_D_IDX], i] for i in 1:length(t)]
-    # i_2_q_values = [sol[global_map[:I_2_Q_IDX], i] for i in 1:length(t)]
-    # i_3_d_values = [sol[global_map[:I_3_D_IDX], i] for i in 1:length(t)]
-    # i_3_q_values = [sol[global_map[:I_3_Q_IDX], i] for i in 1:length(t)]
-
-    # i_2_RI_values, _ = ri_dq_vector(i_2_d_values, i_2_q_values)
-    # i_3_RI_values, _ = ri_dq_vector(i_3_d_values, i_3_q_values)
-
-    # # Line currents
-    # i_12_d_values = [sol[global_map[:I_12_D_IDX], i] for i in 1:length(t)]
-    # i_12_q_values = [sol[global_map[:I_12_Q_IDX], i] for i in 1:length(t)]
-    # i_23_d_values = [sol[global_map[:I_23_D_IDX], i] for i in 1:length(t)]
-    # i_23_q_values = [sol[global_map[:I_23_Q_IDX], i] for i in 1:length(t)]
-    # i_13_d_values = [sol[global_map[:I_13_D_IDX], i] for i in 1:length(t)]
-    # i_13_q_values = [sol[global_map[:I_13_Q_IDX], i] for i in 1:length(t)]
-
-    # i_12_RI_values, i_12_mag = ri_dq_vector(i_12_d_values, i_12_q_values)
-    # i_23_RI_values, i_23_mag = ri_dq_vector(i_23_d_values, i_23_q_values)
-    # i_13_RI_values, i_13_mag = ri_dq_vector(i_13_d_values, i_13_q_values)
-
-    # # Compute power injections
-    # S_2_values = compute_S_vector(v_2_RI_values, i_2_RI_values)
-    # S_3_values = compute_S_vector(v_3_RI_values, i_3_RI_values)
-
-    # # Create plots - Just as an example, 90% of them are not needed
-    # # Plot shaft states
-    # p1 = plot(t, [sol[global_map[:DELTA], i] for i in 1:length(t)],
-    #     label="Rotor angle (δ)", title="Machine States", linewidth=2, left_margin=10mm)
-    # savefig(p1, "../results/rotor_angle.png")
-
-    # p2 = plot(t, [sol[global_map[:OMEGA], i] for i in 1:length(t)],
-    #     label="Rotor speed (ω)", linewidth=2, left_margin=10mm)
-    # savefig(p2, "../results/rotor_speed.png")
-
-    # # Plot fluxes
-    # p3 = plot(t, [sol[global_map[:EQ_P], i] for i in 1:length(t)],
-    #     label="eq'", title="Machine Fluxes", linewidth=2, left_margin=10mm)
-    # plot!(p3, t, [sol[global_map[:ED_P], i] for i in 1:length(t)],
-    #     label="ed'", linewidth=2)
-    # plot!(p3, t, [sol[global_map[:PSI_D_PP], i] for i in 1:length(t)],
-    #     label="ψd''", linewidth=2)
-    # plot!(p3, t, [sol[global_map[:PSI_Q_PP], i] for i in 1:length(t)],
-    #     label="ψq''", linewidth=2)
-    # savefig(p3, "../results/fluxes.png")
-
-    # # Plot avr states
-    # p4 = plot(t, [sol[global_map[:EFD_IDX], i] for i in 1:length(t)],
-    #     label="Field Voltage", title="AVR States", linewidth=2, left_margin=10mm)
-    # plot!(p4, t, [sol[global_map[:VS_IDX], i] for i in 1:length(t)],
-    #     label="Sensed Terminal Voltage", linewidth=2)
-    # plot!(p4, t, [sol[global_map[:VLL_IDX], i] for i in 1:length(t)],
-    #     label="Lead-Lag State", linewidth=2)
-    # plot!(p4, t, [sol[global_map[:VF_IDX], i] for i in 1:length(t)],
-    #     label="Feedback State", linewidth=2)
-    # savefig(p4, "../results/avr_states.png")
-
-    # # Plot governor states
-    # p5 = plot(t, [sol[global_map[:FV_IDX], i] for i in 1:length(t)],
-    #     label="Fuel Value", title="Governor States", linewidth=2, left_margin=10mm)
-    # plot!(p5, t, [sol[global_map[:FF_IDX], i] for i in 1:length(t)],
-    #     label="Fuel Flow", linewidth=2)
-    # plot!(p5, t, [sol[global_map[:ET_IDX], i] for i in 1:length(t)],
-    #     label="Exhaust Temp", linewidth=2)
-    # savefig(p5, "../results/gov_states.png")
-
-    # # Plot line currents
-    # p6 = plot(t, i_12_mag, title="Line Currents", label="I_12", linewith=2, left_margin=10mm)
-    # plot!(p6, t, i_23_mag, label="I_23", linewith=2)
-    # plot!(p6, t, i_13_mag, label="I_13", linewith=2)
-    # savefig(p6, "../results/line_currrents.png")
-
-    # Plot bus voltages
-    p7 = plot(t, v_1_magnitude, label="Infinite Bus", linewidth=2, title="Bus Voltage Magnitudes", left_margin=10mm)
-    plot!(p7, t, v_2_magnitude, label="Machine Bus", linewidth=2)
-    plot!(p7, t, v_3_magnitude, label="Load Bus", linewidth=2)
-    savefig(p7, "../results/bus_voltages.png")
-
-    # Plot powers
-    # p8 = plot(t, first.(S_2_values), label="Inf. Bus (P)", linewidth=2, title="Bus Power", left_margin=10mm)
-    # plot!(p8, t, last.(S_2_values), label="Inf. Bus (Q)", linewidth=2)
-    # plot!(p8, t, first.(S_3_values), label="Load (P)", linewidth=2)
-    # plot!(p8, t, last.(S_3_values), label="Load (Q)", linewidth=2)
-    # savefig(p8, "../results/powers.png")
 end
 
 # Parameters structure for the integrated model
@@ -546,6 +444,9 @@ function run_multimachine_model(network_file)
     M_system[outerloop_idx] .= 1.0
     M_system[innerloop_idx] .= 1.0
     M_system[machine_idx] .= 1.0
+    # Note: Setting the coefficients of the PSI_D and PSI_Q states to 0.0 to treat them as algebraic
+    M_system[machine_idx[PSI_D]] = 0.0
+    M_system[machine_idx[PSI_Q]] = 0.0
     M_system[avr_idx] .= 1.0
     M_system[gov_idx] .= 1.0
 
@@ -754,7 +655,7 @@ function run_multimachine_model(network_file)
     prob = ODEProblem(multimachine_system, states, tspan, p)
 
     # Define the set of times to apply a perturbation
-    perturb_times = [10.0]
+    perturb_times = [1.0]
 
     # Define the condition for which to apply a perturbation
     function condition(u, t, integrator)
@@ -788,7 +689,7 @@ function run_multimachine_model(network_file)
     sol = solve(prob, Rodas5(autodiff=false), dt=0.0001, adaptive=false, saveat=0.0001, callback=cb, tstops=perturb_times)
 
     # Process results
-    make_plots(sol)
+    # make_plots(sol)
 
     t = sol.t
 
@@ -796,9 +697,9 @@ function run_multimachine_model(network_file)
     line_12_current_values_r = Float64[]
     line_13_current_values_r = Float64[]
     line_23_current_values_r = Float64[]
-    line_12_current_values_q = Float64[]
-    line_13_current_values_q = Float64[]
-    line_23_current_values_q = Float64[]
+    line_12_current_values_i = Float64[]
+    line_13_current_values_i = Float64[]
+    line_23_current_values_i = Float64[]
     voltage_magnitude_values_1 = Float64[]
     voltage_magnitude_values_2 = Float64[]
     voltage_magnitude_values_3 = Float64[]
@@ -812,114 +713,146 @@ function run_multimachine_model(network_file)
     ω_pll_values = Float64[]
 
     # Add values to plotting vectors
-    # for i in 1:length(t)
+    for i in 1:length(t)
     #     # Get current state values
-    #     network_states = sol[p.network_idx, i]
-    #     filter_states = sol[p.filter_idx, i]
-    #     innerloop_states = sol[p.innerloop_idx, i]
-    #     outerloop_states = sol[p.outerloop_idx, i]
-    #     pll_states = sol[p.pll_idx, i]
+        network_states = sol[p.network_idx, i]
+        machine_states = sol[p.machine_idx, i]
+        filter_states = sol[p.filter_idx, i]
+        innerloop_states = sol[p.innerloop_idx, i]
+        outerloop_states = sol[p.outerloop_idx, i]
+        pll_states = sol[p.pll_idx, i]
 
     #     # Line current
-    #     I_12_d = network_states[I_12_D_IDX-p.network_idx[1]+1]
-    #     I_12_q = network_states[I_12_Q_IDX-p.network_idx[1]+1]
-    #     I_13_d = network_states[I_13_D_IDX-p.network_idx[1]+1]
-    #     I_13_q = network_states[I_13_Q_IDX-p.network_idx[1]+1]
-    #     I_23_d = network_states[I_23_D_IDX-p.network_idx[1]+1]
-    #     I_23_q = network_states[I_23_Q_IDX-p.network_idx[1]+1]
+        I_12_d = network_states[I_12_D_IDX-p.network_idx[1]+1]
+        I_12_q = network_states[I_12_Q_IDX-p.network_idx[1]+1]
+        I_13_d = network_states[I_13_D_IDX-p.network_idx[1]+1]
+        I_13_q = network_states[I_13_Q_IDX-p.network_idx[1]+1]
+        I_23_d = network_states[I_23_D_IDX-p.network_idx[1]+1]
+        I_23_q = network_states[I_23_Q_IDX-p.network_idx[1]+1]
 
     #     # Terminal voltage and current
-    #     v_1_d = network_states[V_1_D_IDX-p.network_idx[1]+1]
-    #     v_1_q = network_states[V_1_Q_IDX-p.network_idx[1]+1]
-    #     v_3_d = network_states[V_3_D_IDX-p.network_idx[1]+1]
-    #     v_3_q = network_states[V_3_Q_IDX-p.network_idx[1]+1]
-    #     v_2_d = network_states[V_2_D_IDX-p.network_idx[1]+1]
-    #     v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
-    #     i_grd_d = filter_states[ID_GRD]
-    #     i_grd_q = filter_states[IQ_GRD]
+        v_1_d = network_states[V_1_D_IDX-p.network_idx[1]+1]
+        v_1_q = network_states[V_1_Q_IDX-p.network_idx[1]+1]
+        v_3_d = network_states[V_3_D_IDX-p.network_idx[1]+1]
+        v_3_q = network_states[V_3_Q_IDX-p.network_idx[1]+1]
+        v_2_d = network_states[V_2_D_IDX-p.network_idx[1]+1]
+        v_2_q = network_states[V_2_Q_IDX-p.network_idx[1]+1]
+        i_grd_d = filter_states[ID_GRD]
+        i_grd_q = filter_states[IQ_GRD]
+        γ_d1 = 0.1282051282051283
+        γ_q1 = 0.7142857142857143
+        γ_d2 = 22.35371466140696
+        γ_q2 = 2.9154518950437316
+        Xd_pp = 0.135
+        Xq_pp = 0.2
+        I_1_d = (-machine_states[PSI_D] + γ_d1 * machine_states[EQ_P] + (1 - γ_d1) * machine_states[PSI_D_PP]) / Xd_pp
+        I_1_q = (-machine_states[PSI_Q] - γ_q1 * machine_states[ED_P] + (1 - γ_q1) * machine_states[PSI_Q_PP]) / Xq_pp
     #     #I_1_d = network_states[I_1_D_IDX-p.network_idx[1]+1]
     #     #I_1_q = network_states[I_1_Q_IDX-p.network_idx[1]+1]
-    #     I_3_d = network_states[I_3_D_IDX-p.network_idx[1]+1]
-    #     I_3_q = network_states[I_3_Q_IDX-p.network_idx[1]+1]
+        I_3_d = network_states[I_3_D_IDX-p.network_idx[1]+1]
+        I_3_q = network_states[I_3_Q_IDX-p.network_idx[1]+1]
 
     #     # Outer loop states
-    #     p_m = outerloop_states[P_M]
-    #     ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
+        p_m = outerloop_states[P_M]
+        ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
 
     #     # PLL states
     #     ωsys = 1.0
-    #     vq_pll = pll_states[VQ_PLL_IDX]
-    #     ϵ_pll = pll_states[EPSILON_IDX]
-    #     δ_ω_pll = 1.0 - ωsys + pll.kppll * vq_pll + pll.kipll * ϵ_pll
-    #     ω_pll = δ_ω_pll + ωsys
-
+        ω_machine = machine_states[OMEGA]
+        vq_pll = pll_states[VQ_PLL_IDX]
+        ϵ_pll = pll_states[EPSILON_IDX]
+        δ_ω_pll = 1.0 - ω_machine + pll.kppll * vq_pll + pll.kipll * ϵ_pll
+        ω_pll = δ_ω_pll + ω_machine
+        machine_angle = sol[p.machine_idx[DELTA], i]
     #     # Convert line current to rectangular coordinates
-    #     I_12_ri = dq_ri(0.0) * [I_12_d; I_12_q]
-    #     I_13_ri = dq_ri(0.0) * [I_13_d; I_13_q]
-    #     I_23_ri = dq_ri(0.0) * [I_23_d; I_23_q]
+        I_12_ri = dq_ri(machine_angle) * [I_12_d; I_12_q]
+        I_13_ri = dq_ri(machine_angle) * [I_13_d; I_13_q]
+        I_23_ri = dq_ri(machine_angle) * [I_23_d; I_23_q]
 
     #     # Calculate voltage magnitude
-    #     voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
-    #     voltage_magnitude_1 = sqrt(v_1_d^2 + v_1_q^2)
-    #     voltage_magnitude_3 = sqrt(v_3_d^2 + v_3_q^2)
+        voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
+        voltage_magnitude_1 = sqrt(v_1_d^2 + v_1_q^2)
+        voltage_magnitude_3 = sqrt(v_3_d^2 + v_3_q^2)
 
     #     # Calculate power
-    #     #P_1 = v_1_d * I_1_d + v_1_q * I_1_q
-    #     #Q_1 = v_1_q * I_1_d - v_1_d * I_1_q
-    #     P_2 = v_2_d * i_grd_d + v_2_q * i_grd_q
-    #     Q_2 = v_2_q * i_grd_d - v_2_d * i_grd_q
-    #     P_3 = v_3_d * I_3_d + v_3_q * I_3_q
-    #     Q_3 = v_3_q * I_3_d - v_3_d * I_3_q
+        P_1 = v_1_d * I_1_d + v_1_q * I_1_q
+        Q_1 = v_1_q * I_1_d - v_1_d * I_1_q
+        P_2 = v_2_d * i_grd_d + v_2_q * i_grd_q
+        Q_2 = v_2_q * i_grd_d - v_2_d * i_grd_q
+        P_3 = v_3_d * I_3_d + v_3_q * I_3_q
+        Q_3 = v_3_q * I_3_d - v_3_d * I_3_q
 
     #     # Push values to plotting vectors
-    #     push!(line_12_current_values_r, I_12_ri[1])
-    #     push!(line_13_current_values_r, I_13_ri[1])
-    #     push!(line_23_current_values_r, I_23_ri[1])
-    #     push!(line_12_current_values_q, I_12_ri[2])
-    #     push!(line_13_current_values_q, I_13_ri[2])
-    #     push!(line_23_current_values_q, I_23_ri[2])
-    #     push!(voltage_magnitude_values_1, voltage_magnitude_1)
-    #     push!(voltage_magnitude_values_2, voltage_magnitude_2)
-    #     push!(voltage_magnitude_values_3, voltage_magnitude_3)
-    #     #push!(bus_1_p, P_1)
-    #     #push!(bus_2_p, P_2)
-    #     push!(bus_3_p, P_3)
-    #     push!(bus_1_q, Q_1)
-    #     push!(bus_2_q, Q_2)
-    #     push!(bus_3_q, Q_3)
-    #     push!(ω_olc_values, ω_olc)
-    #     push!(ω_pll_values, ω_pll)
-    # end
+        push!(line_12_current_values_r, I_12_ri[1])
+        push!(line_13_current_values_r, I_13_ri[1])
+        push!(line_23_current_values_r, I_23_ri[1])
+        push!(line_12_current_values_i, I_12_ri[2])
+        push!(line_13_current_values_i, I_13_ri[2])
+        push!(line_23_current_values_i, I_23_ri[2])
+        push!(voltage_magnitude_values_1, voltage_magnitude_1)
+        push!(voltage_magnitude_values_2, voltage_magnitude_2)
+        push!(voltage_magnitude_values_3, voltage_magnitude_3)
+        push!(bus_1_p, P_1)
+        push!(bus_2_p, P_2)
+        push!(bus_3_p, P_3)
+        push!(bus_1_q, Q_1)
+        push!(bus_2_q, Q_2)
+        push!(bus_3_q, Q_3)
+        push!(ω_olc_values, ω_olc)
+        push!(ω_pll_values, ω_pll)
+    end
 
     # Create plots
     # Power
-    # p1 = plot(t, bus_1_p,
-    #     label="Inf. Bus", title="Active Power", linewidth=2)
-    # plot!(p1, t, bus_2_p, label="Converter", linewidth=2)
-    # plot!(p1, t, bus_3_p, label="Load", linewidth=2)
-
-    # # Reactive Power
-    # p2 = plot(t, bus_1_q,
-    #     label="Q", title="Reactive Power", linewidth=2)
-    # plot!(p2, t, bus_2_q, label="Converter", linewidth=2)
-    # plot!(p2, t, bus_3_q, label="Load", linewidth=2)
+    p1 = plot(t, bus_1_p,
+        label="Machine Bus", title="Active Power", linewidth=2)
+    plot!(p1, t, bus_2_p, label="Converter", linewidth=2)
+    plot!(p1, t, bus_3_p, label="Load", linewidth=2)
+    savefig(p1, "load_decrease_results_multimachine/active_power_multimachine_load_decrease.png")
+    # Reactive Power
+    p2 = plot(t, bus_1_q,
+        label="Machine Bus", title="Reactive Power", linewidth=2)
+    plot!(p2, t, bus_2_q, label="Converter", linewidth=2)
+    plot!(p2, t, bus_3_q, label="Load", linewidth=2)
+    savefig(p2, "load_decrease_results_multimachine/reactive_power_multimachine_load_decrease.png")
 
     # # Outer Control Angle in degrees
-    # p3 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
-    #     label="δθ_olc", title="Angle (Degrees)", linewidth=2)
+    p0 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
+        label="δθ_olc", title="Angle (Degrees)", linewidth=2)
+    savefig(p0, "load_decrease_results_multimachine/outerloop_angle_multimachine_load_decrease.png")
 
     # # PLL Angle in degrees
-    # plot!(p3, t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
-    #     label="θ_pll", linewidth=2)
+    p10 = plot(t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
+        label="θ_pll", title="PLL Angle (Degrees)", linewidth=2)
+    savefig(p10, "load_decrease_results_multimachine/pll_angle_multimachine_load_decrease.png")
 
     # # Plot Voltage Magnitude
+    p1 = plot(t, voltage_magnitude_values_1,
+        label="Inf. Bus", title="Voltage Magnitude", linewidth=2)
     # p4 = plot(t, voltage_magnitude_values_1,
     #     label="Inf. Bus", title="Voltage Magnitude", linewidth=2)
-    # plot!(p4, t, voltage_magnitude_values_2, label="Converter", linewidth=2)
-    # plot!(p4, t, voltage_magnitude_values_3, label="Load", linewidth=2)
+    plot!(p1, t, voltage_magnitude_values_2, label="Converter", linewidth=2)
+    plot!(p1, t, voltage_magnitude_values_3, label="Load", linewidth=2)
+    savefig(p1, "load_decrease_results_multimachine/voltage_magnitude_multimachine_load_decrease.png")
 
-    # p5 = plot(t, ω_pll_values .* 60.0, label="PLL", linewidth=2, title="Frequency")
-    # plot!(p5, t, ω_olc_values .* 60.0, label="OLC", linewidth=2)
+    # Plot rotor angle and frequency
+    p2 = plot(t, [sol[p.machine_idx[DELTA], i] * 180.0 / π for i in 1:length(t)],
+        label="δ", title="Rotor Angle (Degrees)", linewidth=2)
+    plot!(p2, t, [sol[p.machine_idx[OMEGA], i] for i in 1:length(t)],
+        label="ω", linewidth=2)
+    savefig(p2, "load_decrease_results_multimachine/rotor_angle_multimachine_load_decrease.png")
+    # Plot line currents
+    p3 = plot(t, line_12_current_values_r, label="I_12_r", title="Line Currents", linewidth=2)
+    plot!(p3, t, line_12_current_values_i, label="I_12_i", linewidth=2)
+    plot!(p3, t, line_13_current_values_r, label="I_13_r", linewidth=2)
+    plot!(p3, t, line_13_current_values_i, label="I_13_i", linewidth=2)
+    plot!(p3, t, line_23_current_values_r, label="I_23_r", linewidth=2)
+    plot!(p3, t, line_23_current_values_i, label="I_23_i", linewidth=2)
+    savefig(p3, "load_decrease_results_multimachine/line_currents_multimachineload_decrease.png")
+
+    p5 = plot(t, ω_pll_values .* 60.0, label="PLL", linewidth=2, title="Frequency")
+    plot!(p5, t, ω_olc_values .* 60.0, label="OLC", linewidth=2)
+    savefig(p5, "load_decrease_results_multimachine/frequency_multimachine_load_decrease.png")
 
     # p6 = plot(t, [sol[p.filter_idx[VD_FLT], i] for i in 1:length(t)], label="Vd (flt)", linewidth=2, title="PLL Angle Investigation")
     # plot!(p6, t, [sol[p.filter_idx[VQ_FLT], i] for i in 1:length(t)], label="Vq (flt)", linewidth=2)
