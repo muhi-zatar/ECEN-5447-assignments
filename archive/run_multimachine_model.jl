@@ -644,14 +644,14 @@ function run_multimachine_model(network_file)
         # exit()
 
         # Print debugging info at integer time steps
-        if abs(t - round(t)) < 0.00001
-            println("t=$t: Machine P=$(real(S_terminal_machine)), Q=$(imag(S_terminal_machine)), Inverter P=$(real(S_terminal_inverter)), Q=$(imag(S_terminal_inverter))")
-        end
+        # if abs(t - round(t)) < 0.00001
+        #     println("t=$t: Machine P=$(real(S_terminal_machine)), Q=$(imag(S_terminal_machine)), Inverter P=$(real(S_terminal_inverter)), Q=$(imag(S_terminal_inverter))")
+        # end
     end
 
     multimachine_system = ODEFunction(multimachine_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 5.0)
+    tspan = (0.0, 10.0)
     prob = ODEProblem(multimachine_system, states, tspan, p)
 
     # Define the set of times to apply a perturbation
@@ -681,15 +681,13 @@ function run_multimachine_model(network_file)
         # 4. Load decrease - uncommenting this will simulate a load decrease
         integrator.p.network.Z_L *= 1.15
     end
+    perturbation_type = "load_decrease"
 
     # Create a Callback function that represents the perturbation
     cb = DiscreteCallback(condition, affect!)
 
     # Run simulation
     sol = solve(prob, Rodas5(autodiff=false), dt=0.0001, adaptive=false, saveat=0.0001, callback=cb, tstops=perturb_times)
-
-    # Process results
-    # make_plots(sol)
 
     t = sol.t
 
@@ -714,7 +712,7 @@ function run_multimachine_model(network_file)
 
     # Add values to plotting vectors
     for i in 1:length(t)
-    #     # Get current state values
+        # Get current state values
         network_states = sol[p.network_idx, i]
         machine_states = sol[p.machine_idx, i]
         filter_states = sol[p.filter_idx, i]
@@ -722,7 +720,7 @@ function run_multimachine_model(network_file)
         outerloop_states = sol[p.outerloop_idx, i]
         pll_states = sol[p.pll_idx, i]
 
-    #     # Line current
+        # Line current
         I_12_d = network_states[I_12_D_IDX-p.network_idx[1]+1]
         I_12_q = network_states[I_12_Q_IDX-p.network_idx[1]+1]
         I_13_d = network_states[I_13_D_IDX-p.network_idx[1]+1]
@@ -730,7 +728,7 @@ function run_multimachine_model(network_file)
         I_23_d = network_states[I_23_D_IDX-p.network_idx[1]+1]
         I_23_q = network_states[I_23_Q_IDX-p.network_idx[1]+1]
 
-    #     # Terminal voltage and current
+        # Terminal voltage and current
         v_1_d = network_states[V_1_D_IDX-p.network_idx[1]+1]
         v_1_q = network_states[V_1_Q_IDX-p.network_idx[1]+1]
         v_3_d = network_states[V_3_D_IDX-p.network_idx[1]+1]
@@ -747,34 +745,34 @@ function run_multimachine_model(network_file)
         Xq_pp = 0.2
         I_1_d = (-machine_states[PSI_D] + γ_d1 * machine_states[EQ_P] + (1 - γ_d1) * machine_states[PSI_D_PP]) / Xd_pp
         I_1_q = (-machine_states[PSI_Q] - γ_q1 * machine_states[ED_P] + (1 - γ_q1) * machine_states[PSI_Q_PP]) / Xq_pp
-    #     #I_1_d = network_states[I_1_D_IDX-p.network_idx[1]+1]
-    #     #I_1_q = network_states[I_1_Q_IDX-p.network_idx[1]+1]
         I_3_d = network_states[I_3_D_IDX-p.network_idx[1]+1]
         I_3_q = network_states[I_3_Q_IDX-p.network_idx[1]+1]
 
-    #     # Outer loop states
+        # Outer loop states
         p_m = outerloop_states[P_M]
         ω_olc = outerloop.ω_ref + outerloop.Rp * (outerloop.P_ref - p_m)
 
-    #     # PLL states
-    #     ωsys = 1.0
+        # PLL states
         ω_machine = machine_states[OMEGA]
         vq_pll = pll_states[VQ_PLL_IDX]
         ϵ_pll = pll_states[EPSILON_IDX]
         δ_ω_pll = 1.0 - ω_machine + pll.kppll * vq_pll + pll.kipll * ϵ_pll
         ω_pll = δ_ω_pll + ω_machine
+
+        # Extract machine angle to help convert line currents
         machine_angle = sol[p.machine_idx[DELTA], i]
-    #     # Convert line current to rectangular coordinates
+
+        # Convert line current to rectangular coordinates
         I_12_ri = dq_ri(machine_angle) * [I_12_d; I_12_q]
         I_13_ri = dq_ri(machine_angle) * [I_13_d; I_13_q]
         I_23_ri = dq_ri(machine_angle) * [I_23_d; I_23_q]
 
-    #     # Calculate voltage magnitude
+        # Calculate voltage magnitude
         voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
         voltage_magnitude_1 = sqrt(v_1_d^2 + v_1_q^2)
         voltage_magnitude_3 = sqrt(v_3_d^2 + v_3_q^2)
 
-    #     # Calculate power
+        # Calculate power
         P_1 = v_1_d * I_1_d + v_1_q * I_1_q
         Q_1 = v_1_q * I_1_d - v_1_d * I_1_q
         P_2 = v_2_d * i_grd_d + v_2_q * i_grd_q
@@ -782,7 +780,7 @@ function run_multimachine_model(network_file)
         P_3 = v_3_d * I_3_d + v_3_q * I_3_q
         Q_3 = v_3_q * I_3_d - v_3_d * I_3_q
 
-    #     # Push values to plotting vectors
+        # Push values to plotting vectors
         push!(line_12_current_values_r, I_12_ri[1])
         push!(line_13_current_values_r, I_13_ri[1])
         push!(line_23_current_values_r, I_23_ri[1])
@@ -803,66 +801,51 @@ function run_multimachine_model(network_file)
     end
 
     # Create plots
-    # Power
-    p1 = plot(t, bus_1_p,
-        label="Machine Bus", title="Active Power", linewidth=2)
-    plot!(p1, t, bus_2_p, label="Converter", linewidth=2)
-    plot!(p1, t, bus_3_p, label="Load", linewidth=2)
-    savefig(p1, "load_decrease_results_multimachine/active_power_multimachine_load_decrease.png")
-    # Reactive Power
-    p2 = plot(t, bus_1_q,
-        label="Machine Bus", title="Reactive Power", linewidth=2)
-    plot!(p2, t, bus_2_q, label="Converter", linewidth=2)
-    plot!(p2, t, bus_3_q, label="Load", linewidth=2)
-    savefig(p2, "load_decrease_results_multimachine/reactive_power_multimachine_load_decrease.png")
-
-    # # Outer Control Angle in degrees
-    p0 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
+    # Angles in degrees
+    p1 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
         label="δθ_olc", title="Angle (Degrees)", linewidth=2)
-    savefig(p0, "load_decrease_results_multimachine/outerloop_angle_multimachine_load_decrease.png")
+    plot!(p1, t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
+        label="θ_pll", linewidth=2)
+    plot!(p1, t, [sol[p.machine_idx[DELTA], i] * 180.0 / π for i in 1:length(t)],
+        label="δ_machine", linewidth=2)
+    savefig(p1, "../results/Multimachine_results/$(perturbation_type)/angle.png")
 
-    # # PLL Angle in degrees
-    p10 = plot(t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
-        label="θ_pll", title="PLL Angle (Degrees)", linewidth=2)
-    savefig(p10, "load_decrease_results_multimachine/pll_angle_multimachine_load_decrease.png")
+    # Frequency in Hz
+    p2 = plot(t, ω_pll_values .* 60.0, label="PLL", linewidth=2, title="Frequency (Hz)")
+    plot!(p2, t, ω_olc_values .* 60.0, label="OLC", linewidth=2)
+    plot!(p2, t, [sol[p.machine_idx[OMEGA], i] for i in 1:length(t)] .* 60.0,
+        label="Machine", linewidth=2)
+    savefig(p2, "../results/Multimachine_results/$(perturbation_type)/frequency.png")
 
-    # # Plot Voltage Magnitude
-    p1 = plot(t, voltage_magnitude_values_1,
-        label="Inf. Bus", title="Voltage Magnitude", linewidth=2)
-    # p4 = plot(t, voltage_magnitude_values_1,
-    #     label="Inf. Bus", title="Voltage Magnitude", linewidth=2)
-    plot!(p1, t, voltage_magnitude_values_2, label="Converter", linewidth=2)
-    plot!(p1, t, voltage_magnitude_values_3, label="Load", linewidth=2)
-    savefig(p1, "load_decrease_results_multimachine/voltage_magnitude_multimachine_load_decrease.png")
+    # Voltage Magnitude
+    p3 = plot(t, voltage_magnitude_values_1,
+        label="Inf. Bus", title="Voltage Magnitude (p.u.)", linewidth=2)
+    plot!(p3, t, voltage_magnitude_values_2, label="Converter", linewidth=2)
+    plot!(p3, t, voltage_magnitude_values_3, label="Load", linewidth=2)
+    savefig(p3, "../results/Multimachine_results/$(perturbation_type)/voltage.png")
 
-    # Plot rotor angle and frequency
-    p2 = plot(t, [sol[p.machine_idx[DELTA], i] * 180.0 / π for i in 1:length(t)],
-        label="δ", title="Rotor Angle (Degrees)", linewidth=2)
-    plot!(p2, t, [sol[p.machine_idx[OMEGA], i] for i in 1:length(t)],
-        label="ω", linewidth=2)
-    savefig(p2, "load_decrease_results_multimachine/rotor_angle_multimachine_load_decrease.png")
     # Plot line currents
-    p3 = plot(t, line_12_current_values_r, label="I_12_r", title="Line Currents", linewidth=2)
-    plot!(p3, t, line_12_current_values_i, label="I_12_i", linewidth=2)
-    plot!(p3, t, line_13_current_values_r, label="I_13_r", linewidth=2)
-    plot!(p3, t, line_13_current_values_i, label="I_13_i", linewidth=2)
-    plot!(p3, t, line_23_current_values_r, label="I_23_r", linewidth=2)
-    plot!(p3, t, line_23_current_values_i, label="I_23_i", linewidth=2)
-    savefig(p3, "load_decrease_results_multimachine/line_currents_multimachineload_decrease.png")
+    p4 = plot(t, line_12_current_values_r, label="I_12_r", title="Line Currents (p.u.)", linewidth=2)
+    plot!(p4, t, line_12_current_values_i, label="I_12_i", linewidth=2)
+    plot!(p4, t, line_13_current_values_r, label="I_13_r", linewidth=2)
+    plot!(p4, t, line_13_current_values_i, label="I_13_i", linewidth=2)
+    plot!(p4, t, line_23_current_values_r, label="I_23_r", linewidth=2)
+    plot!(p4, t, line_23_current_values_i, label="I_23_i", linewidth=2)
+    savefig(p4, "../results/Multimachine_results/$(perturbation_type)/line_current.png")
 
-    p5 = plot(t, ω_pll_values .* 60.0, label="PLL", linewidth=2, title="Frequency")
-    plot!(p5, t, ω_olc_values .* 60.0, label="OLC", linewidth=2)
-    savefig(p5, "load_decrease_results_multimachine/frequency_multimachine_load_decrease.png")
+    # Active Power
+    p5 = plot(t, bus_1_p,
+        label="Machine Bus", title="Active Power (p.u.)", linewidth=2)
+    plot!(p5, t, bus_2_p, label="Converter", linewidth=2)
+    plot!(p5, t, bus_3_p, label="Load", linewidth=2)
+    savefig(p5, "../results/Multimachine_results/$(perturbation_type)/active_power.png")
 
-    # p6 = plot(t, [sol[p.filter_idx[VD_FLT], i] for i in 1:length(t)], label="Vd (flt)", linewidth=2, title="PLL Angle Investigation")
-    # plot!(p6, t, [sol[p.filter_idx[VQ_FLT], i] for i in 1:length(t)], label="Vq (flt)", linewidth=2)
-    # plot!(p6, t, [sol[p.filter_idx[ID_GRD], i] for i in 1:length(t)], label="Id (grd)", linewidth=2)
-    # plot!(p6, t, [sol[p.filter_idx[IQ_GRD], i] for i in 1:length(t)], label="Iq (grd)", linewidth=2)
-    # plot!(p6, t, [sol[p.pll_idx[EPSILON_IDX], i] for i in 1:length(t)], label="ϵ", linewidth=2)
-
-    # # Combine plots
-    # p_combined = plot(p1, p2, p3, p4, p5, p6, layout=(3, 2), size=(1200, 1800), left_margin=10mm)
-    # savefig(p_combined, "inverter_simulation_results.png")
+    # Reactive Power
+    p6 = plot(t, bus_1_q,
+        label="Machine Bus", title="Reactive Power (p.u.)", linewidth=2)
+    plot!(p6, t, bus_2_q, label="Converter", linewidth=2)
+    plot!(p6, t, bus_3_q, label="Load", linewidth=2)
+    savefig(p6, "../results/Multimachine_results/$(perturbation_type)/reactive_power.png")
 
     # Logging the states and writing to CSV
     # Open a CSV file for writing
