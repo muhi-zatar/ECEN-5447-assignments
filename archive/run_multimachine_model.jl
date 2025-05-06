@@ -98,74 +98,6 @@ const FV_IDX = 1                # Fuel value
 const FF_IDX = 2                # Fuel flow
 const ET_IDX = 3                # Exhaust temp
 
-# states = vcat(network_states, filter_states, pll_states, outerloop_states, innerloop_states, machine_states, avr_states, governor_states)
-# Create a mapping of local indices to global indices
-network_start = 1
-machine_start = network_start + NUM_STATES_NETWORK
-avr_start = machine_start + NUM_STATES_MACHINE
-governor_start = avr_start + NUM_STATES_AVR
-
-# Network indices
-network_map = Dict(
-    :I_12_D_IDX => network_start + I_12_D_IDX - 1,
-    :I_12_Q_IDX => network_start + I_12_Q_IDX - 1,
-    :I_13_D_IDX => network_start + I_13_D_IDX - 1,
-    :I_13_Q_IDX => network_start + I_13_Q_IDX - 1,
-    :I_23_D_IDX => network_start + I_23_D_IDX - 1,
-    :I_23_Q_IDX => network_start + I_23_Q_IDX - 1,
-    :V_1_D_IDX => network_start + V_1_D_IDX - 1,
-    :V_1_Q_IDX => network_start + V_1_Q_IDX - 1,
-    :V_2_D_IDX => network_start + V_2_D_IDX - 1,
-    :V_2_Q_IDX => network_start + V_2_Q_IDX - 1,
-    :V_3_D_IDX => network_start + V_3_D_IDX - 1,
-    :V_3_Q_IDX => network_start + V_3_Q_IDX - 1,
-    :I_3_D_IDX => network_start + I_3_D_IDX - 1,
-    :I_3_Q_IDX => network_start + I_3_Q_IDX - 1,
-    :I_B1_D_IDX => network_start + I_B1_D_IDX - 1,
-    :I_B1_Q_IDX => network_start + I_B1_Q_IDX - 1,
-    :I_B2_D_IDX => network_start + I_B2_D_IDX - 1,
-    :I_B2_Q_IDX => network_start + I_B2_Q_IDX - 1,
-    :I_B3_D_IDX => network_start + I_B3_D_IDX - 1,
-    :I_B3_Q_IDX => network_start + I_B3_Q_IDX - 1
-)
-
-# Machine indices
-machine_map = Dict(
-    :DELTA => machine_start + DELTA - 1,
-    :OMEGA => machine_start + OMEGA - 1,
-    :EQ_P => machine_start + EQ_P - 1,
-    :ED_P => machine_start + ED_P - 1,
-    :PSI_D_PP => machine_start + PSI_D_PP - 1,
-    :PSI_Q_PP => machine_start + PSI_Q_PP - 1,
-    :PSI_D => machine_start + PSI_D - 1,
-    :PSI_Q => machine_start + PSI_Q - 1
-)
-
-# AVR indices
-avr_map = Dict(
-    :EFD_IDX => avr_start + EFD_IDX - 1,
-    :VS_IDX => avr_start + VS_IDX - 1,
-    :VLL_IDX => avr_start + VLL_IDX - 1,
-    :VF_IDX => avr_start + VF_IDX - 1
-)
-
-# Governor indices
-governor_map = Dict(
-    :FV_IDX => governor_start + FV_IDX - 1,
-    :FF_IDX => governor_start + FF_IDX - 1,
-    :ET_IDX => governor_start + ET_IDX - 1
-)
-
-# # Filter indices
-# filter_map = Dict(
-#     :ID_INV => filter_start + FV_IDX - 1,
-#     :FF_IDX => governor_start + FF_IDX - 1,
-#     :ET_IDX => governor_start + ET_IDX - 1
-# )
-
-# Combine into a single mapping
-global_map = merge(network_map, machine_map, avr_map, governor_map)
-
 # Matrix transformation functions
 function ri_dq(δ::T) where {T<:Number}
     return Float64[
@@ -260,15 +192,21 @@ function run_multimachine_model(network_file)
     network = ThreeBusNetwork()
     filter = Filter()
     pll = PLL()
-    outerloop = OuterLoop()
+    outerloop = OuterLoop(
+    # Kpq=1.5,
+    # Rp=0.03
+    )
     innerloop = InnerLoop()
     machine = SauerPaiMachine(
+        #R=0.01,
+        #H=50,
         base_power=100.0,
         system_base_power=100.0,
         system_base_frequency=60.0
     )
 
     avr = EXST1(
+        #KA=50.0,
         V_ref=V_mag_machine  # Set reference voltage to initial voltage
     )
 
@@ -437,6 +375,9 @@ function run_multimachine_model(network_file)
             M_system[network_idx[i]] = network.M[i, i]
         end
     end
+
+    # TEST: Setting the coefficients for the network states to 0.0 to treat them as algebraic
+    #M_system[network_idx] .= 0.0
 
     # Other states are differential
     M_system[filter_idx] .= 1.0
@@ -651,7 +592,7 @@ function run_multimachine_model(network_file)
 
     multimachine_system = ODEFunction(multimachine_dynamics!, mass_matrix=mass_matrix)
 
-    tspan = (0.0, 10.0)
+    tspan = (0.0, 7.5)
     prob = ODEProblem(multimachine_system, states, tspan, p)
 
     # Define the set of times to apply a perturbation
@@ -663,25 +604,22 @@ function run_multimachine_model(network_file)
     end
 
     # Define the perturbation
+    perturbation_type = "line_trip"
     function affect!(integrator)
         # Choose one perturbation scenario
-
-        # 1. Line Trip - uncommenting this will simulate a line trip
-        # integrator.p.network.R_12 = 1e6
-        # integrator.p.network.X_12 = 1e6
-        # integrator.p.network.B_1 *= 0.5
-        # integrator.p.network.B_2 *= 0.5
-
-        # 2. Frequency change - uncommenting this will simulate a frequency change
-        # integrator.p.ωsys = 1.02  # 2% frequency increase
-
-        # 3. Load increase - uncommenting this will simulate a load increase
-        # integrator.p.network.Z_L *= 0.85  # 15% load increase
-
-        # 4. Load decrease - uncommenting this will simulate a load decrease
-        integrator.p.network.Z_L *= 1.15
+        if perturbation_type == "line_trip"
+            # 1. Line Trip - uncommenting this will simulate a line trip
+            integrator.p.network.R_12 = 1e6
+            integrator.p.network.X_12 = 1e6
+            integrator.p.network.B_1 *= 0.5
+            integrator.p.network.B_2 *= 0.5
+        elseif perturbation_type == "load_increase"
+            integrator.p.network.Z_L *= 0.85    # 15% load increase
+        elseif perturbation_type == "load_decrease"
+            integrator.p.network.Z_L *= 1.15    # 15% load decrease
+        end
     end
-    perturbation_type = "load_decrease"
+
 
     # Create a Callback function that represents the perturbation
     cb = DiscreteCallback(condition, affect!)
@@ -692,15 +630,12 @@ function run_multimachine_model(network_file)
     t = sol.t
 
     # Allocate vectors for plotting
-    line_12_current_values_r = Float64[]
-    line_13_current_values_r = Float64[]
-    line_23_current_values_r = Float64[]
-    line_12_current_values_i = Float64[]
-    line_13_current_values_i = Float64[]
-    line_23_current_values_i = Float64[]
     voltage_magnitude_values_1 = Float64[]
     voltage_magnitude_values_2 = Float64[]
     voltage_magnitude_values_3 = Float64[]
+    current_magnitude_values_line_12 = Float64[]
+    current_magnitude_values_line_13 = Float64[]
+    current_magnitude_values_line_23 = Float64[]
     bus_1_p = Float64[]
     bus_2_p = Float64[]
     bus_3_p = Float64[]
@@ -767,9 +702,14 @@ function run_multimachine_model(network_file)
         I_13_ri = dq_ri(machine_angle) * [I_13_d; I_13_q]
         I_23_ri = dq_ri(machine_angle) * [I_23_d; I_23_q]
 
+        # Calculate line current magnitude
+        I_12_mag = sqrt(I_12_ri[1]^2 + I_12_ri[2]^2)
+        I_13_mag = sqrt(I_13_ri[1]^2 + I_13_ri[2]^2)
+        I_23_mag = sqrt(I_23_ri[1]^2 + I_23_ri[2]^2)
+
         # Calculate voltage magnitude
-        voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
         voltage_magnitude_1 = sqrt(v_1_d^2 + v_1_q^2)
+        voltage_magnitude_2 = sqrt(v_2_d^2 + v_2_q^2)
         voltage_magnitude_3 = sqrt(v_3_d^2 + v_3_q^2)
 
         # Calculate power
@@ -781,15 +721,12 @@ function run_multimachine_model(network_file)
         Q_3 = v_3_q * I_3_d - v_3_d * I_3_q
 
         # Push values to plotting vectors
-        push!(line_12_current_values_r, I_12_ri[1])
-        push!(line_13_current_values_r, I_13_ri[1])
-        push!(line_23_current_values_r, I_23_ri[1])
-        push!(line_12_current_values_i, I_12_ri[2])
-        push!(line_13_current_values_i, I_13_ri[2])
-        push!(line_23_current_values_i, I_23_ri[2])
         push!(voltage_magnitude_values_1, voltage_magnitude_1)
         push!(voltage_magnitude_values_2, voltage_magnitude_2)
         push!(voltage_magnitude_values_3, voltage_magnitude_3)
+        push!(current_magnitude_values_line_12, I_12_mag)
+        push!(current_magnitude_values_line_13, I_13_mag)
+        push!(current_magnitude_values_line_23, I_23_mag)
         push!(bus_1_p, P_1)
         push!(bus_2_p, P_2)
         push!(bus_3_p, P_3)
@@ -800,82 +737,90 @@ function run_multimachine_model(network_file)
         push!(ω_pll_values, ω_pll)
     end
 
+    # File naming
+    variation = "algebraic_stator_fluxes"
+    if variation !== nothing
+        save_path = "../results/Multimachine_results/$perturbation_type/$variation/"
+    else
+        save_path = "../results/Multimachine_results/$perturbation_type/"
+    end
+
+    if !isdir(save_path)
+        mkdir(save_path)
+    end
+
     # Create plots
     # Angles in degrees
     p1 = plot(t, [sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π for i in 1:length(t)],
-        label="δθ_olc", title="Angle (Degrees)", linewidth=2)
+        label="δθ_olc", title="Angle (Degrees)", linewidth=2, ylims=(0.0, 15.0))
     plot!(p1, t, [sol[p.pll_idx[THETA_IDX], i] * 180.0 / π for i in 1:length(t)],
         label="θ_pll", linewidth=2)
     plot!(p1, t, [sol[p.machine_idx[DELTA], i] * 180.0 / π for i in 1:length(t)],
         label="δ_machine", linewidth=2)
-    savefig(p1, "../results/Multimachine_results/$(perturbation_type)/angle.png")
+    savefig(p1, "$save_path/angle.png")
 
     # Frequency in Hz
-    p2 = plot(t, ω_pll_values .* 60.0, label="PLL", linewidth=2, title="Frequency (Hz)")
+    p2 = plot(t, ω_pll_values .* 60.0, label="PLL", linewidth=2, title="Frequency (Hz)", ylims=(55.0, 65.0))
     plot!(p2, t, ω_olc_values .* 60.0, label="OLC", linewidth=2)
     plot!(p2, t, [sol[p.machine_idx[OMEGA], i] for i in 1:length(t)] .* 60.0,
         label="Machine", linewidth=2)
-    savefig(p2, "../results/Multimachine_results/$(perturbation_type)/frequency.png")
+    savefig(p2, "$save_path/frequency.png")
 
     # Voltage Magnitude
     p3 = plot(t, voltage_magnitude_values_1,
-        label="Inf. Bus", title="Voltage Magnitude (p.u.)", linewidth=2)
+        label="Inf. Bus", title="Voltage Magnitude (p.u.)", linewidth=2, ylims=(0.85, 1.15))
     plot!(p3, t, voltage_magnitude_values_2, label="Converter", linewidth=2)
     plot!(p3, t, voltage_magnitude_values_3, label="Load", linewidth=2)
-    savefig(p3, "../results/Multimachine_results/$(perturbation_type)/voltage.png")
+    savefig(p3, "$save_path/voltage.png")
 
     # Plot line currents
-    p4 = plot(t, line_12_current_values_r, label="I_12_r", title="Line Currents (p.u.)", linewidth=2)
-    plot!(p4, t, line_12_current_values_i, label="I_12_i", linewidth=2)
-    plot!(p4, t, line_13_current_values_r, label="I_13_r", linewidth=2)
-    plot!(p4, t, line_13_current_values_i, label="I_13_i", linewidth=2)
-    plot!(p4, t, line_23_current_values_r, label="I_23_r", linewidth=2)
-    plot!(p4, t, line_23_current_values_i, label="I_23_i", linewidth=2)
-    savefig(p4, "../results/Multimachine_results/$(perturbation_type)/line_current.png")
+    p4 = plot(t, current_magnitude_values_line_12, label="I_12", title="Line Current Magnitude (p.u.)", linewidth=2)
+    plot!(p4, t, current_magnitude_values_line_13, label="I_13", linewidth=2)
+    plot!(p4, t, current_magnitude_values_line_23, label="I_23", linewidth=2)
+    savefig(p4, "$save_path/line_current.png")
 
     # Active Power
     p5 = plot(t, bus_1_p,
-        label="Machine Bus", title="Active Power (p.u.)", linewidth=2)
+        label="Machine Bus", title="Active Power (p.u.)", linewidth=2, ylims=(-2.5, 2.5))
     plot!(p5, t, bus_2_p, label="Converter", linewidth=2)
     plot!(p5, t, bus_3_p, label="Load", linewidth=2)
-    savefig(p5, "../results/Multimachine_results/$(perturbation_type)/active_power.png")
+    savefig(p5, "$save_path/active_power.png")
 
     # Reactive Power
     p6 = plot(t, bus_1_q,
-        label="Machine Bus", title="Reactive Power (p.u.)", linewidth=2)
+        label="Machine Bus", title="Reactive Power (p.u.)", linewidth=2, ylims=(-1.0, 1.0))
     plot!(p6, t, bus_2_q, label="Converter", linewidth=2)
     plot!(p6, t, bus_3_q, label="Load", linewidth=2)
-    savefig(p6, "../results/Multimachine_results/$(perturbation_type)/reactive_power.png")
+    savefig(p6, "$save_path/reactive_power.png")
 
     # Logging the states and writing to CSV
     # Open a CSV file for writing
-    # open("inverter_simulation_results_load_115.csv", "w") do io
-    #     # Write the header
-    #     write(io, "Time,P_1,Q_1,P_2,Q_2,P_3,Q_3,theta_pll,theta_olc,voltage_magnitude_1,voltage_magnitude_2,voltage_magnitude_3,I_12_r,I_12_i,I_13_r,I_13_i,I_23_r,I_23_i,omega_olc,omega_pll\n")
-    #     # Write the data
-    #     for i in 1:length(t)
-    #         write(io, "$(t[i]),")
-    #         write(io, "$(bus_1_p[i]),")
-    #         write(io, "$(bus_1_q[i]),")
-    #         write(io, "$(bus_2_p[i]),")
-    #         write(io, "$(bus_2_q[i]),")
-    #         write(io, "$(bus_3_p[i]),")
-    #         write(io, "$(bus_3_q[i]),")
-    #         write(io, "$(sol[p.pll_idx[THETA_IDX], i] * 180.0 / π),")
-    #         write(io, "$(sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π),")
-    #         write(io, "$(voltage_magnitude_values_1[i]),")
-    #         write(io, "$(voltage_magnitude_values_2[i]),")
-    #         write(io, "$(voltage_magnitude_values_3[i]),")
-    #         write(io, "$(line_12_current_values_r[i]),")
-    #         write(io, "$(line_12_current_values_q[i]),")
-    #         write(io, "$(line_13_current_values_r[i]),")
-    #         write(io, "$(line_13_current_values_q[i]),")
-    #         write(io, "$(line_23_current_values_r[i]),")
-    #         write(io, "$(line_23_current_values_q[i]),")
-    #         write(io, "$(ω_olc_values[i]),")
-    #         write(io, "$(ω_pll_values[i])\n")
-    #     end
-    # end
+    open("$save_path/results.csv", "w") do io
+        # Write the header
+        write(io, "Time,P_1,Q_1,P_2,Q_2,P_3,Q_3,delta_machine,theta_pll,theta_olc,voltage_magnitude_1,voltage_magnitude_2,voltage_magnitude_3,I_12_magnitude,I_13_magnitude,I_23_magnitude,omega_olc,omega_pll,omega_machine\n")
+        # Write the data
+        for i in 1:length(t)
+            write(io, "$(t[i]),")
+            write(io, "$(bus_1_p[i]),")
+            write(io, "$(bus_1_q[i]),")
+            write(io, "$(bus_2_p[i]),")
+            write(io, "$(bus_2_q[i]),")
+            write(io, "$(bus_3_p[i]),")
+            write(io, "$(bus_3_q[i]),")
+            write(io, "$(sol[p.machine_idx[DELTA], i] * 180.0 / π),")
+            write(io, "$(sol[p.pll_idx[THETA_IDX], i] * 180.0 / π),")
+            write(io, "$(sol[p.outerloop_idx[THETA_OLC], i] * 180.0 / π),")
+            write(io, "$(voltage_magnitude_values_1[i]),")
+            write(io, "$(voltage_magnitude_values_2[i]),")
+            write(io, "$(voltage_magnitude_values_3[i]),")
+            write(io, "$(current_magnitude_values_line_12[i]),")
+            write(io, "$(current_magnitude_values_line_13[i]),")
+            write(io, "$(current_magnitude_values_line_23[i]),")
+            write(io, "$(ω_olc_values[i] * 60.0),")
+            write(io, "$(ω_pll_values[i] * 60.0),")
+            write(io, "$(sol[p.machine_idx[OMEGA], i] * 60.0)\n")
+        end
+    end
     return sol
 end
 
