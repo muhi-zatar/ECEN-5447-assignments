@@ -85,6 +85,7 @@ mutable struct SauerPaiMachine
         γ_d2=22.35371466140696,
         γ_q2=2.9154518950437316,
         H=3.148,
+        # H = 10000.0,
         D=2.0,
         base_power=100.0,
         system_base_power=100.0,
@@ -239,6 +240,7 @@ function initialize_machine(machine::SauerPaiMachine, V_terminal, delta, P, Q)
         sol_x0 = sol.zero
 
         states = zeros(Float64, 8)
+        τ_m = sol_x0[2]
         Vf = sol_x0[3]
         states[DELTA] = δ
         states[OMEGA] = 1.0
@@ -289,7 +291,8 @@ function update_machine_states!(
 
     # State derivatives
     # shaft equations (15.5 in Milano's book)
-    ω_sys = 1.0
+    # Fixing the system frequency to machine frequency
+    ω_sys = ω
     derivatives[DELTA] = 2.0 * π * f0 * (ω - ω_sys)
 
     # Speed derivative
@@ -297,8 +300,12 @@ function update_machine_states!(
         τ_m - τ_e - (machine.D * (ω - 1.0))
     )
 
+    # flux equations (15.9 in Milano's book)
+    # These equations here are differential states
     derivatives[PSI_D] = (machine.R * i_d + ω * ψ_q + v_d) * (2.0 * π * f0)
     derivatives[PSI_Q] = (machine.R * i_q - ω * ψ_d + v_q) * (2.0 * π * f0)
+    # derivatives[PSI_D] = 0.0
+    # derivatives[PSI_Q] = 0.0
     # flux equations (15.13 in Milano's book)
     derivatives[EQ_P] = (1.0 / machine.Td0_p) * (
         -eq_p + Vf - (machine.X_d - machine.Xd_p) * (
